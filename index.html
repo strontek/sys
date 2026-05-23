@@ -903,7 +903,7 @@ async function runOCR() {
         b64 = fr.base64;
       }
       const res = await callGAS({ action:'ocrReceipt', fileName:qf.name, mimeType:qf.mimeType||'image/jpeg', base64:b64, fileId:qf.id });
-      const items = (res.success && res.items) ? res.items;
+      const items = res.items;
       items.forEach((item, idx) => {
         const id = `${qf.id}_${idx}`;
         if (!S.receipts.find(r => r.id===id))
