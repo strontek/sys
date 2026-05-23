@@ -290,8 +290,9 @@ select.inp{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.
           <div class="card" style="margin-bottom:16px">
             <div class="card-hd">📁 選擇檔案</div>
             <div class="card-bd">
-              <input type="file" id="fileInput" multiple accept="image/*,application/pdf" style="display:none" onchange="onFilePick(this.files)">
-              <div class="dz" id="dz" onclick="document.getElementById('fileInput').click()">
+              <input type="file" id="fileInput" multiple accept="image/*,application/pdf" style="display:none"
+                     onchange="onFilePick(this.files); this.value='';">
+              <div class="dz" id="dz" onclick="const fi=document.getElementById('fileInput'); fi.value=''; fi.click();">
                 <div style="font-size:38px;margin-bottom:10px">🖼️</div>
                 <div style="font-size:15px;font-weight:700">點擊或拖曳照片 / PDF</div>
                 <div style="font-size:12px;color:var(--muted);margin-top:6px">每張照片可包含多張發票或油單<br>支援 JPG · PNG · PDF</div>
@@ -335,7 +336,10 @@ select.inp{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.
             <div class="card-bd">
               <div class="frow"><label class="lbl">申請月份</label><input type="month" class="inp" id="up-month"></div>
               <div class="frow"><label class="lbl">申請人</label>
-                <select class="inp" id="up-person"><option value="">— 請選擇 —</option></select>
+                <div class="inp" id="up-person-display" style="background:rgba(255,255,255,.04);color:var(--muted);cursor:default;user-select:none;display:flex;align-items:center;gap:8px">
+                  <span id="up-person-name" style="color:var(--text);font-weight:600">—</span>
+                </div>
+                <input type="hidden" id="up-person" value="">
               </div>
               <button class="btn btn-primary btn-full" id="btnUpload" onclick="doUpload()" disabled>☁️ 上傳至 Drive</button>
             </div>
@@ -485,7 +489,7 @@ select.inp{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.
 // CONFIG
 // ════════════════════════════════════════════════════════════
 const CFG = {
-  GAS_URL:      'https://script.google.com/macros/s/AKfycbx3cQMDpX8k_RyAdEd2X3Ro6juWzIKe-2g1XYAp-zEO9p6im-30FmpV0qpeaJHtAMJO/exec'
+  GAS_URL: 'https://script.google.com/macros/s/AKfycbx3cQMDpX8k_RyAdEd2X3Ro6juWzIKe-2g1XYAp-zEO9p6im-30FmpV0qpeaJHtAMJO/exec'
 };
 
 // ════════════════════════════════════════════════════════════
@@ -688,48 +692,31 @@ async function loadConfig() {
     const res = await callGAS({ action:'getConfig' });
     if (res.success) { S.config = res.data; log('✅ 同步完成 ' + now()); }
     else throw new Error(res.error);
-  } catch { S.config = demoConfig(); log('⚠️ 範例資料（GAS 未連線）'); }
+  } catch { log('GAS 未連線'); }
   populateSelects();
-}
-
-function demoConfig() {
-  return {
-    persons:[
-      { name:'Joan',  dept:'研發部', title:'工程師',    lineId:'Udev', depts:['研發部','業務部'] },
-      { name:'王小明', dept:'業務部', title:'業務專員',  lineId:'U002', depts:['業務部'] },
-    ],
-    departments:['業務部','研發部','財務部','行政部'],
-    projects:[
-      { id:'P001', name:'Hermes 專案', quota:true,  subsidy:3000, effectDate:'2025-01-01', closeDate:'2025-12-31' },
-      { id:'P002', name:'群創-金龍',   quota:false, subsidy:0,    effectDate:'2025-03-01', closeDate:'2025-09-30' },
-      { id:'P003', name:'Alpha 計畫',  quota:true,  subsidy:2000, effectDate:'2024-07-01', closeDate:'2026-06-30' },
-    ],
-    // 全域里程補助標準歷史
-    mileageRates:[
-      { rate:7,   effectDate:'2024-01-01', endDate:'2024-12-31', note:'2024 年度標準' },
-      { rate:7.5, effectDate:'2025-01-01', endDate:'',           note:'2025 年度調整' },
-    ],
-  };
 }
 
 function populateSelects() {
   const ps = S.config.persons;
-  ['up-person','exp-person'].forEach(id => {
-    const sel = document.getElementById(id);
-    if (!sel) return;
-    const cur = sel.value;
-    sel.innerHTML = '<option value="">— 請選擇 —</option>' +
-      ps.map(p => `<option value="${p.name}">${p.name}（${p.dept}）</option>`).join('');
-    if (cur) sel.value = cur;
-    if (S.user) sel.value = S.user.name;
-  });
+
+  const upHidden  = document.getElementById('up-person');
+  const upDisplay = document.getElementById('up-person-name');
+  if (upHidden && upDisplay && S.user) {
+    upHidden.value      = S.user.name;
+    const p = ps.find(x => x.name === S.user.name);
+    upDisplay.textContent = p ? `${p.name}（${p.dept}）` : S.user.name;
+  }
 }
 
 // ════════════════════════════════════════════════════════════
 // FILE UPLOAD FLOW
 // ════════════════════════════════════════════════════════════
 function onFilePick(files) {
-  S.pendingFiles = Array.from(files);
+  const incoming = Array.from(files);
+  incoming.forEach(f => {
+    const dup = S.pendingFiles.some(x => x.name === f.name && x.size === f.size);
+    if (!dup) S.pendingFiles.push(f);
+  });
   renderPendingFiles();
   document.getElementById('btnUpload').disabled = !S.pendingFiles.length;
 }
@@ -786,8 +773,17 @@ async function doUpload() {
     try {
       const b64 = await toBase64(f);
       const res = await callGAS({ action:'uploadFile', fileName:`${month}_${person}_${f.name}`, mimeType:f.type, base64:b64, person, month });
+      // GAS 整體失敗（例外被 doPost catch 住）
+      if (!res.success) {
+        toast('❌ ' + f.name + ' 上傳失敗：' + (res.error || '未知錯誤'));
+        continue;
+      }
+      // Drive 成功但 Sheet 寫入失敗
+      if (res.sheetOk === false) {
+        toast('⚠️ ' + f.name + ' 已上傳 Drive，但 Sheet 紀錄失敗：' + (res.sheetErr || ''));
+      }
       done.push({ id:res.fileId||'sim_'+Date.now(), name:f.name, size:(f.size/1024).toFixed(1)+' KB', time:now(), url:res.fileUrl||'#', mimeType:f.type, dataUrl:res.dataUrl||'' });
-    } catch(e) { toast('❌ '+f.name+' 上傳失敗'); }
+    } catch(e) { toast('❌ '+f.name+' 上傳失敗：' + e.message); }
   }
 
   bar.style.width='100%'; fl.textContent='✅ 完成';
@@ -817,17 +813,9 @@ function renderUploadedList(files) {
 async function loadDriveFiles() {
   try {
     const res = await callGAS({ action:'listFiles' });
-    S.driveFiles = res.files || demoDriveFiles();
-  } catch { S.driveFiles = demoDriveFiles(); }
+    S.driveFiles = res.files;
+  } catch { }
   renderDriveFiles();
-}
-
-function demoDriveFiles() {
-  return [
-    { id:'f1', name:'2025-05_Joan_receipt1.jpg', date:'2025-05-10', mimeType:'image/jpeg' },
-    { id:'f2', name:'2025-05_Joan_receipt2.jpg', date:'2025-05-12', mimeType:'image/jpeg' },
-    { id:'f3', name:'2025-05_Joan_fuel.jpg',     date:'2025-05-14', mimeType:'image/jpeg' },
-  ];
 }
 
 function renderDriveFiles() {
@@ -1487,21 +1475,9 @@ async function callGAS(payload) {
     const text = await res.text();
     return JSON.parse(text);
   } catch (err) {
-    console.warn('[callGAS] 失敗:', payload.action, err.message, '');
-    return simulateGAS(payload);
+    console.warn('[callGAS] 失敗:', payload.action, err.message);
+    return { success:false, error:err.message };
   }
-}
-
-function simulateGAS(p) {
-  if (p.action==='getConfig')    return { success:false };
-  if (p.action==='lineToken')    return { success:true, person:{ name:'Joan', dept:'研發部', title:'工程師', lineId:'Udev', avatar:'' } };
-  if (p.action==='listFiles')    return { success:true, files:demoDriveFiles() };
-  if (p.action==='uploadFile')   return { success:true, fileId:'sim_'+Date.now(), fileUrl:'#', dataUrl:'' };
-  if (p.action==='ocrReceipt')   return { success:true, items:demoItems(p.fileName) };
-  if (p.action==='getDistance')  return { success:true, km:28.5, distText:'28.5 km', duration:'約 35 分鐘' };
-  if (p.action==='exportAll')    return { success:true, urls:[] };
-  if (p.action==='getHistory')   return { success:true, rows:[{ month:'2025-04', person:'Joan', project:'Hermes 專案', attachment:'附件三', amount:2850, status:'已核准', pdfUrl:'#' }] };
-  return { success:false, error:'未知操作' };
 }
 
 function toBase64(file) {
