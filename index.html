@@ -62,7 +62,6 @@ select.inp{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.
 .btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
 .btn-primary{background:var(--accent);color:white}.btn-primary:hover:not(:disabled){background:#6ba0f9}
 .btn-ghost{background:rgba(255,255,255,.06);color:var(--text)}.btn-ghost:hover{background:rgba(255,255,255,.1)}
-.btn-outline{background:transparent;color:var(--accent);border:1px solid var(--accent)}
 .btn-danger{background:rgba(248,113,113,.15);color:var(--red)}
 .btn-green{background:rgba(52,211,153,.15);color:var(--green)}
 .btn-gold{background:rgba(245,166,35,.15);color:var(--gold)}
@@ -80,7 +79,6 @@ select.inp{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.
 .bd-blue{background:rgba(79,142,247,.15);color:var(--accent)}
 .bd-green{background:rgba(52,211,153,.15);color:var(--green)}
 .bd-red{background:rgba(248,113,113,.15);color:var(--red)}
-.bd-amber{background:rgba(251,191,36,.15);color:var(--amber)}
 .bd-orange{background:rgba(251,146,60,.15);color:var(--parking)}
 .bd-purple{background:rgba(124,92,252,.15);color:var(--accent2)}
 .bd-muted{background:rgba(107,118,153,.15);color:var(--muted)}
@@ -170,6 +168,9 @@ select.inp{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.
 .maps-link{display:inline-flex;align-items:center;gap:4px;color:var(--accent);font-size:11px;text-decoration:none;padding:3px 8px;border-radius:5px;background:rgba(79,142,247,.1)}
 .maps-link:hover{background:rgba(79,142,247,.2)}
 .km-result{display:inline-flex;align-items:center;gap:6px;background:rgba(52,211,153,.1);color:var(--green);padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;margin-top:6px}
+.map-preview{margin-top:8px;border-radius:8px;overflow:hidden;border:1px solid var(--border);display:none}
+.map-preview.show{display:block}
+.map-preview img{width:100%;display:block;max-height:180px;object-fit:cover}
 
 /* Toast */
 .toast{position:fixed;top:68px;right:20px;background:var(--surface2);border:1px solid var(--border2);color:var(--text);padding:10px 18px;border-radius:10px;font-size:13px;z-index:9999;opacity:0;transform:translateX(20px);transition:all .3s;pointer-events:none;max-width:320px;box-shadow:0 8px 32px rgba(0,0,0,.4)}
@@ -332,11 +333,10 @@ select.inp{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.
             <div class="card-hd">
               ✅ 已上傳至雲端
               <span class="badge bd-green" id="uploadedCnt">0 個</span>
-              <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="nav('ocr')">前往辨識 →</button>
             </div>
             <div class="card-bd" style="padding:0">
               <table class="tbl">
-                <thead><tr><th>檔名</th><th>大小</th><th>時間</th><th>Drive</th><th></th></tr></thead>
+                <thead><tr><th>檔名</th><th>大小</th><th>時間</th><th>Drive</th></tr></thead>
                 <tbody id="uploadedTbl"></tbody>
               </table>
             </div>
@@ -363,6 +363,9 @@ select.inp{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.
             <div class="card-hd">
               📋 雲端憑證紀錄
               <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="loadDriveFiles()">🔄</button>
+            </div>
+            <div id="uploadDoneHint" style="display:none;align-items:center;gap:8px;padding:8px 14px;background:rgba(var(--accent-rgb,.4,.8,1),.08);border-bottom:1px solid var(--border);font-size:12px;color:var(--accent)">
+              ✅ 上傳完成，請勾選檔案後點「辨識勾選項目」
             </div>
             <div style="max-height:280px;overflow-y:auto">
               <table class="tbl">
@@ -427,7 +430,7 @@ select.inp{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.
           <div id="ocrDoneBar" style="display:none;margin-top:12px;gap:8px;align-items:center">
             <div class="chkbox on" id="chkAllOcr" title="全選 / 全不選" onclick="toggleAllOcr()" style="flex-shrink:0"></div>
             <span style="font-size:12px;color:var(--muted);margin-right:4px">全選</span>
-            <button class="btn btn-primary" onclick="nav('export')">📄 前往整理匯出 →</button>
+            <button class="btn btn-primary" id="btnGoExport" onclick="stashThenExport()">📄 前往整理匯出 →</button>
             <button class="btn btn-gold" id="btnOcrStash" onclick="doStashAll()">💾 暫存</button>
             <button class="btn btn-danger" id="btnDelSelected" onclick="delSelected()">🗑 刪除勾選</button>
           </div>
@@ -468,6 +471,7 @@ select.inp{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.
             <span class="print-bar-info" id="expPrintInfo">已勾選 0 份</span>
             <button class="btn btn-ghost" onclick="toggleAllSec()">☐ 全選／全不選</button>
             <button class="btn btn-gold" onclick="doExportSelected()">🖨 列印勾選項目</button>
+            <button class="btn btn-gold" id="btnStashBar" onclick="doStashAll()">💾 暫存</button>
             <button class="btn btn-primary" onclick="doExportAll()">✅ 全部匯出 PDF</button>
           </div>
         </div>
@@ -486,13 +490,20 @@ select.inp{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.
             <div class="card-hd">📤 匯出</div>
             <div class="card-bd" style="display:flex;flex-direction:column;gap:10px">
               <div class="frow"><label class="lbl">申請人確認</label>
-                <select class="inp" id="exp-person"><option value="">— 請選擇 —</option></select>
+                <select class="inp" id="exp-person" onchange="loadDriveFiles();loadExportHistory()"><option value="">— 請選擇 —</option></select>
               </div>
               <div class="frow"><label class="lbl">申請月份</label><input type="month" class="inp" id="exp-month" onchange="syncOcrMonth(this.value)"></div>
               <button class="btn btn-ghost btn-full" id="btnExpLoad" onclick="loadOcrResults(false, true)">📥 從 Sheet 載入</button>
-              <button class="btn btn-primary btn-full" onclick="doExportAll()">✅ 全部匯出 PDF</button>
-              <button class="btn btn-gold btn-full" id="btnStash" onclick="doStashAll()">💾 暫存</button>
               <button class="btn btn-ghost btn-full" onclick="refreshExport()">🔄 重新整理分群</button>
+              <!-- PDF 產生結果清單 -->
+              <div id="pdfResultCard" style="display:none;margin-top:4px">
+                <div class="card">
+                  <div class="card-hd" style="font-size:12px">📄 已產生 PDF <span id="pdfResultCnt" style="font-size:12px;color:var(--muted);font-weight:400"></span></div>
+                  <div class="card-bd" style="padding:0">
+                    <table class="tbl" id="pdfResultTbl"></table>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -502,17 +513,6 @@ select.inp{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.
   </div><!-- /mainArea -->
 </div><!-- /appShell -->
 
-<!-- MAPS MODAL -->
-<div class="modal-wrap" id="mapsModal">
-  <div class="modal-box" style="max-width:480px">
-    <div style="font-size:17px;font-weight:700;margin-bottom:16px">🗺 Google Maps 距離查詢</div>
-    <div id="mapsModalBody"></div>
-    <div style="display:flex;gap:8px;margin-top:16px">
-      <button class="btn btn-ghost" style="flex:1" onclick="closeModal('mapsModal')">關閉</button>
-      <button class="btn btn-primary" style="flex:2" id="btnApplyKm" onclick="applyKm()">套用此公里數</button>
-    </div>
-  </div>
-</div>
 
 <!-- DUPLICATE INVOICE MODAL -->
 <div class="modal-wrap" id="dupModal">
@@ -551,8 +551,6 @@ const S = {
   ocrQueue: [],
   receipts: [],
 };
-
-let mapsCtx = { pid:'', rowIdx:0, km:0, origin:'', dest:'' };
 
 // ════════════════════════════════════════════════════════════
 // MOBILE MENU
@@ -660,9 +658,28 @@ function handleLineCallback() {
   callGAS({ action: 'lineToken', code })
     .then(res => {
       clearTimeout(callbackTimer);
-      if (res.success)       { restoreLineBtn(); finishLogin(res.person); }
-      else if (res.needName) { restoreLineBtn(); S._pendingBind = { lineId: res.lineId, lineName: res.lineName, avatar: res.avatar }; showBindNameUI(); }
-      else                   { restoreLineBtn(); toast('❌ LINE 登入失敗：' + (res.error || '未知')); }
+      if (res.success) {
+        restoreLineBtn();
+        finishLogin(res.person);
+      } else if (res.needName) {
+        restoreLineBtn();
+        if (!res.lineId) {
+          // GAS 回傳 needName 但沒帶 lineId → 舊版 GAS 尚未部署，提示重試
+          toast('⚠️ 伺服器回應不完整（缺少 lineId），請確認 GAS 已重新部署後再試');
+          return;
+        }
+        S._pendingBind = { lineId: res.lineId, lineName: res.lineName || '', avatar: res.avatar || '' };
+        showBindNameUI();
+      } else {
+        restoreLineBtn();
+        const msg = res.error || '未知';
+        // 常見原因提示
+        let hint = '';
+        if (msg.includes('redirect_uri') || msg.includes('invalid_request')) {
+          hint = '\n\n💡 可能原因：LINE Developer Console 的 Callback URL 與目前網址不符，請確認已加入：\n' + window.location.href.split('?')[0];
+        }
+        toast('❌ LINE 登入失敗：' + msg + hint);
+      }
     })
     .catch(err => { clearTimeout(callbackTimer); restoreLineBtn(); toast('❌ 登入過程發生錯誤：' + err.message); });
 }
@@ -674,8 +691,7 @@ function finishLogin(person) {
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('appShell').style.display  = 'grid';
   renderUserBar();
-  loadConfig();
-  loadDriveFiles();
+  loadConfig(); // loadConfig 結尾會呼叫 loadDriveFiles
 }
 
 function showBindNameUI() {
@@ -700,7 +716,7 @@ async function doBindName() {
   const res = await callGAS({ action: 'bindName', name, ...b });
   btn.disabled = false; btn.innerHTML = '🔗 比對並綁定帳號';
   if (res.success) { S._pendingBind = null; finishLogin(res.person); }
-  else { errEl.textContent = '❌ ' + (res.error || '比對失敗'); errEl.style.display = 'block'; }
+  else { errEl.textContent = '❌ 找不到符合的姓名，請確認輸入是否正確，或聯絡管理員新增帳號。'; errEl.style.display = 'block'; }
 }
 
 function renderUserBar() {
@@ -747,6 +763,7 @@ async function loadConfig() {
   }
   if (S.user) renderUserBar();
   populateSelects();
+  loadDriveFiles(); // 人/月欄位填好後才載入，確保過濾正確
 }
 
 function populateSelects() {
@@ -899,19 +916,30 @@ function renderUploadedList(files) {
   document.getElementById('uploadedTbl').innerHTML = files.map((f,i) =>
     `<tr><td style="font-size:12px">${f.name}</td><td class="mono" style="font-size:11px">${f.size}</td>
      <td style="font-size:11px;color:var(--muted)">${f.time}</td>
-     <td><a href="${f.url}" target="_blank" style="color:var(--accent);font-size:12px">開啟↗</a></td>
-     <td><button class="btn btn-green btn-sm" onclick='addQueue(${JSON.stringify(f)})'>+ 辨識</button></td></tr>`
+     <td><a href="${f.url}" target="_blank" style="color:var(--accent);font-size:12px">開啟↗</a></td></tr>`
   ).join('');
+  // 提示使用者從雲端憑證紀錄勾選送辨識
+  const hint = document.getElementById('uploadDoneHint');
+  if (hint) hint.style.display = 'flex';
 }
 
 // ════════════════════════════════════════════════════════════
 // DRIVE FILES
 // ════════════════════════════════════════════════════════════
 async function loadDriveFiles() {
+  // 優先讀上傳頁的申請人/月份，fallback 到整理匯出頁
+  const person = document.getElementById('up-person')?.value
+              || document.getElementById('exp-person')?.value || '';
+  const month  = document.getElementById('up-month')?.value
+              || document.getElementById('exp-month')?.value  || '';
+  toast('⏳ 載入雲端憑證中…');
   try {
-    const res = await callGAS({ action:'listFiles' });
+    const res = await callGAS({ action:'listFiles', person, month });
     S.driveFiles = res.files || [];
-  } catch { }
+    toast(S.driveFiles.length ? `📂 找到 ${S.driveFiles.length} 個檔案` : '📂 此月份無憑證紀錄');
+  } catch {
+    toast('❌ 載入失敗，請重試');
+  }
   renderDriveFiles();
 }
 
@@ -1040,7 +1068,7 @@ async function runOCR() {
     let attribution = 'project', attributionTarget = '';
     if (qa.startsWith('proj:'))      { attribution = 'project'; attributionTarget = qa.slice(5); }
     else if (qa.startsWith('dept:')) { attribution = 'dept';    attributionTarget = qa.slice(5); }
-    else if (qa === 'other')         { attribution = 'other';   attributionTarget = ''; }
+    else if (qa === 'other')         { attribution = 'other';   attributionTarget = '其他'; }
 
     try {
       let b64 = '';
@@ -1696,8 +1724,9 @@ function buildExpSec(key, rs, attType, proj) {
       const pid = key.replace('att4:','').slice(5);
       proj  = S.config.projects.find(p => p.id === pid);
       label = proj ? proj.name : '（未選專案）';
-    } else if (key.startsWith('dept:')) {
-      label = '🏢 ' + key.slice(5);
+    } else if (key.startsWith('dept:') || key.startsWith('att4:dept:')) {
+      const deptName = key.replace('att4:','').slice(5);
+      label = '🏢 ' + deptName;
     } else { label = '📋 其他'; }
   } else {
     label = proj.name;
@@ -1736,6 +1765,16 @@ function buildExpSec(key, rs, attType, proj) {
     <div class="exp-sec-bd">
       ${bodyHtml}
     </div>`;
+  // Trigger park selectors rendering after DOM insertion
+  if (attType === 'att2') {
+    if (proj) {
+      setTimeout(()=>renderParkSelectors(proj.id), 0);
+    } else {
+      const _pid = key.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const _parkData = att2ParkData[_pid] || [];
+      setTimeout(()=>renderParkSelectors2(_pid, _parkData), 0);
+    }
+  }
   return div;
 }
 
@@ -1792,83 +1831,33 @@ function buildExpSecAtt3(quotaProjs) {
   return div;
 }
 
-// ── 附件三多專案 form（逐專案列） ───────────────────────────
-function att3Form_multi(quotaProjs) {
-  const month = document.getElementById('exp-month').value || today().slice(0,7);
-  const expPerson = document.getElementById('exp-person');
-  const personName = expPerson?.options[expPerson.selectedIndex]?.text || '';
-  // 從 Persons 取部門/職稱
-  const pData = S.config.persons?.find(p => p.name === personName) || {};
-  const pDept = pData.dept || '';
-  const pTitle = pData.title || '';
-  const deptTitle = pDept + (pTitle ? '／' + pTitle : '');
-
-  const rows = quotaProjs.map((e, i) => {
-    const n = i + 1;
-    const total   = e.otherR.reduce((s, r) => s + r.amount, 0);
-    const subsidy = e.proj.subsidy || 0;
-    const diff    = total - subsidy;
-    return `
-    <tr>
-      <td style="text-align:center;color:var(--muted);font-size:12px">${n}</td>
-      <td><input type="month" class="inp" style="padding:4px 8px;font-size:12px" value="${month}"></td>
-      <td style="font-size:13px;font-weight:600">${e.proj.name}</td>
-      <td><input type="number" class="inp" style="padding:4px 8px;font-size:12px;text-align:right" value="${subsidy}" id="a3sub-${e.proj.id}"></td>
-      <td><input type="date" class="inp" style="padding:4px 8px;font-size:12px" value="${e.proj.effectDate||''}" id="a3start-${e.proj.id}"></td>
-      <td><input type="date" class="inp" style="padding:4px 8px;font-size:12px" value="${e.proj.closeDate||''}" id="a3end-${e.proj.id}"></td>
-      <td class="mono" style="text-align:right;font-size:13px">$${total.toLocaleString()}</td>
-      <td class="mono" style="text-align:right;font-size:13px;color:${diff>=0?'var(--green)':'var(--red)'}">$${diff.toLocaleString()}</td>
-      <td><input class="inp" style="padding:4px 8px;font-size:12px" placeholder="備註"></td>
-      <td style="text-align:center"><div class="sec-ck" onclick="this.classList.toggle('on')" title="已入帳"></div></td>
-    </tr>`;
-  }).join('');
-
-  return `<div class="att-form">
-    <div class="att-title">📎 附件三 — 私車公用補助核定彙總表（專案月定額制）</div>
-    <div class="fg2" style="margin-bottom:12px">
-      <div><label class="lbl">員工姓名</label><input class="inp" value="${personName}" placeholder="員工姓名"></div>
-      <div><label class="lbl">部門／職稱</label><input class="inp" value="${deptTitle}" placeholder="部門 / 職稱"></div>
-    </div>
-    <div style="overflow-x:auto">
-      <table class="tbl" style="min-width:860px;font-size:12px">
-        <thead>
-          <tr>
-            <th style="width:36px">序號</th>
-            <th style="width:120px">月份</th>
-            <th>專案代碼／名稱</th>
-            <th style="width:100px;text-align:right">核定補助(元/月)</th>
-            <th style="width:120px">生效日</th>
-            <th style="width:120px">終止日(結案)</th>
-            <th style="width:100px;text-align:right">發票金額(當月)</th>
-            <th style="width:100px;text-align:right">差額(發票-補助)</th>
-            <th>主管核准／備註</th>
-            <th style="width:52px">已入帳</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
-  </div>`;
-}
-
-function simpleList(rs) {
-  return rs.map(r => `<div class="info-row"><span>${r.vendor} · ${r.date}</span><span class="mono">$${r.amount.toLocaleString()}</span></div>`).join('');
-}
-
 // 附件二（無專案）- 給 dept / other 群組用，提供外勤記錄欄位
 function att2FormNoProj(key, rs) {
   // pid：sanitize key，與附件四共用同一個 id 命名空間
   const pid = key.replace(/[^a-zA-Z0-9_-]/g, '_');
-  att2Rows[pid] = 1;
   const parkR = rs.filter(r => r.category === 'parking');
   // 記錄 key→pid 的對應，供附件四 buildExpSec 時使用
   att2PidMap[key] = pid;
 
+  // 從同群組 receipts 裡找已存的外勤資料（含 mapUrl）
+  const savedRows = (() => {
+    for (const r of rs) {
+      if (r.fieldRows && r.fieldRows.length) return r.fieldRows;
+    }
+    return [];
+  })();
+  att2Rows[pid] = Math.max(savedRows.length, 1);
+
+  // Store parkR for later rendering (called by buildExpSec after DOM insertion)
+  att2ParkData[pid] = parkR.map(r=>({id:r.id,vendor:r.vendor,date:r.date,amount:r.amount}));
   return `<div class="att-form">
     <div class="att-title">📎 附件二 — 外勤記錄與停車費配對</div>
-    <div id="a2rows-${pid}">${a2RowHTML(pid, 0)}</div>
+    <div id="a2rows-${pid}">${
+      savedRows.length
+        ? savedRows.map((fr, i) => a2RowHTML(pid, i, fr)).join('')
+        : a2RowHTML(pid, 0)
+    }</div>
     <button class="btn btn-ghost btn-sm" onclick="addA2Row('${pid}')" style="margin-top:4px;margin-bottom:4px">＋ 新增外勤記錄</button>
-    <script>setTimeout(()=>renderParkSelectors2('${pid}',${JSON.stringify(parkR.map(r=>({id:r.id,vendor:r.vendor,date:r.date,amount:r.amount})))}),0);</script>
   </div>`;
 }
 
@@ -1919,60 +1908,9 @@ function updatePrintBar() {
   }
 }
 
-function att3Form(proj, rs) {
-  const month = document.getElementById('exp-month').value || today().slice(0,7);
-  const expPerson = document.getElementById('exp-person');
-  const personName = expPerson?.options[expPerson.selectedIndex]?.text || '';
-  const total = rs.reduce((s,r)=>s+r.amount,0);
-  const diff  = total - (proj.subsidy||0);
-  return `<div class="att-form">
-    <div class="att-title">📎 附件三 — 私車公用補助核定彙總表（專案月定額制）</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.7">
-      ※同一員工可同時有多專案，專案結案後次月停用，員工每月需檢附公司統編油品發票（總額≧當月補助總額）。<br>
-      ※交通補助(月定額)依核定表併薪發放。<br>
-      ※申請/憑證期限依財會公告之每月結帳截止日辦理。
-    </div>
-    <div class="fg3" style="margin-bottom:10px">
-      <div><label class="lbl">月份</label><input type="month" class="inp" id="a3month-${proj.id}" value="${month}"></div>
-      <div><label class="lbl">員工姓名</label><input class="inp" id="a3name-${proj.id}" value="${personName}" placeholder="員工姓名"></div>
-      <div><label class="lbl">部門／職稱</label><input class="inp" id="a3dept-${proj.id}" placeholder="部門 / 職稱"></div>
-    </div>
-    <div class="fg3" style="margin-bottom:10px">
-      <div><label class="lbl">專案代碼／名稱</label><input class="inp" id="a3proj-${proj.id}" value="${proj.name}" placeholder="專案代碼 / 名稱"></div>
-      <div><label class="lbl">核定補助（元／月）</label><input type="number" class="inp" value="${proj.subsidy}" id="a3sub-${proj.id}" oninput="recalcAtt3('${proj.id}',${total})"></div>
-      <div class="fg2" style="gap:8px">
-        <div><label class="lbl">生效日</label><input type="date" class="inp" id="a3start-${proj.id}"></div>
-        <div><label class="lbl">終止日（結案）</label><input type="date" class="inp" id="a3end-${proj.id}"></div>
-      </div>
-    </div>
-    <div style="margin-bottom:8px;font-size:12px;color:var(--muted);font-weight:600">費用憑證明細（當月）：</div>
-    ${rs.map(r=>`<div class="info-row"><span>${r.vendor} · ${r.invoiceNo||'—'} · ${r.date}</span><span class="mono">$${r.amount.toLocaleString()}</span></div>`).join('')}
-    <div class="calc-box" id="a3calc-${proj.id}">
-      <div class="calc-row"><span>發票金額合計（當月）</span><span class="mono" id="a3inv-${proj.id}">$${total.toLocaleString()}</span></div>
-      <div class="calc-row"><span>核定補助</span><span class="mono" id="a3sval-${proj.id}">－$${(proj.subsidy||0).toLocaleString()}</span></div>
-      <div class="calc-row calc-tot"><span>差額（發票 − 補助）</span><span class="mono" id="a3diff-${proj.id}" style="color:${diff>=0?'var(--green)':'var(--red)'}">$${diff.toLocaleString()}</span></div>
-    </div>
-    <div style="margin-top:12px">
-      <div class="fg2">
-        <div><label class="lbl">主管核准／備註</label><input class="inp" id="a3remark-${proj.id}" placeholder="主管核准意見或備註"></div>
-        <div style="display:flex;align-items:flex-end;gap:8px;padding-bottom:1px">
-          <label class="lbl" style="margin:0;white-space:nowrap">已入帳</label>
-          <div class="chkbox" id="a3ck-${proj.id}" onclick="this.classList.toggle('on')" title="已入帳確認"></div>
-        </div>
-      </div>
-    </div>
-  </div>`;
-}
-
-function recalcAtt3(pid, invTotal) {
-  const sub  = parseFloat(document.getElementById('a3sub-'+pid)?.value)||0;
-  const diff = invTotal - sub;
-  se('a3sval-'+pid, '－$'+sub.toLocaleString());
-  se('a3diff-'+pid, '$'+diff.toLocaleString());
-}
-
-const att2Rows  = {};
-const att2PidMap = {};  // key → sanitized pid，供附件四查詢
+const att2Rows    = {};
+const att2PidMap  = {};  // key → sanitized pid，供附件四查詢
+const att2ParkData = {}; // pid → parkR array for renderParkSelectors2
 
 function att2Form(proj, otherR, parkR) {
   att2Rows[proj.id] = 1;
@@ -1994,7 +1932,6 @@ function att2Form(proj, otherR, parkR) {
         : a2RowHTML(proj.id, 0)
     }</div>
     <button class="btn btn-ghost btn-sm" onclick="addA2Row('${proj.id}')" style="margin-top:4px;margin-bottom:4px">＋ 新增外勤記錄</button>
-    <script>setTimeout(()=>renderParkSelectors('${proj.id}'),0);</script>
   </div>`;
 }
 
@@ -2003,9 +1940,11 @@ function a2RowHTML(pid, i, prefill) {
   const defStart = p.start  || '新北市三重區三民街272巷13號';
   const defEnd   = p.end    || '';
   const defDate  = p.date   || '';
-  const defRsn   = p.reason || '';
+  const defRsn    = p.reason || '';
+  const defRemark = p.remark || '';
   const defKm    = p.km     || '';
   const isRound  = p.isRound !== undefined ? p.isRound : true;
+  const hasMap   = !!(p.mapUrl);
   return `<div class="att-form" id="a2r-${pid}-${i}" style="margin-bottom:8px;padding:10px 12px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <span style="font-size:11px;font-weight:700;color:var(--muted)">第 ${i+1} 筆外勤</span>
@@ -2014,7 +1953,11 @@ function a2RowHTML(pid, i, prefill) {
     <div class="fg4" style="margin-bottom:8px">
       <div><label class="lbl">外勤日期</label><input type="date" class="inp" id="a2d-${pid}-${i}" value="${defDate}"></div>
       <div><label class="lbl">事由</label><input class="inp" id="a2rsn-${pid}-${i}" placeholder="外勤事由" value="${defRsn}"></div>
-      <div><label class="lbl">公里數</label><input type="number" class="inp" id="a2km-${pid}-${i}" value="${defKm}" placeholder="0"></div>
+      <div><label class="lbl">公里數（單程）</label>
+        <input type="number" class="inp" id="a2km-${pid}-${i}" value="${defKm}" placeholder="0"
+               style="background:rgba(255,255,255,.04);cursor:default" readonly
+               title="由 Maps 查詢後自動填入">
+      </div>
       <div><label class="lbl">來回 / 單程</label>
         <div class="tgl">
           <button class="tgl-btn ${isRound?'on':''}"  id="a2rnd-${pid}-${i}" onclick="setRound(this,'${pid}',${i},true)">來回</button>
@@ -2026,6 +1969,23 @@ function a2RowHTML(pid, i, prefill) {
       <div><label class="lbl">起點</label><input class="inp" id="a2s-${pid}-${i}" value="${defStart}" placeholder="起點地址"></div>
       <div><label class="lbl">終點</label><input class="inp" id="a2e-${pid}-${i}" value="${defEnd}" placeholder="終點地址"></div>
     </div>
+    <div style="margin-bottom:8px">
+      <label class="lbl">備註</label>
+      <input class="inp" id="a2rem-${pid}-${i}" placeholder="補充說明（會填入 PDF 備註欄）" value="${defRemark}">
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+      <button class="btn btn-ghost btn-sm" id="a2mapbtn-${pid}-${i}" onclick="queryMaps('${pid}',${i})">🗺 查詢最短距離</button>
+      <div id="a2km-result-${pid}-${i}" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"></div>
+    </div>
+    <div class="map-preview ${hasMap?'show':''}" id="a2map-prev-${pid}-${i}">${hasMap
+      ? `<a href="${p.mapUrl}" target="_blank"
+          style="display:flex;align-items:center;justify-content:center;gap:8px;
+                 padding:14px;background:rgba(79,142,247,.07);color:var(--accent);
+                 font-size:13px;font-weight:600;text-decoration:none;border-radius:8px">
+          🗺 在 Google Maps 開啟路線↗
+        </a>`
+      : ''}</div>
+    <input type="hidden" id="a2map-url-${pid}-${i}" value="${p.mapUrl||''}" data-mapurl>
     <div id="a2park-sel-${pid}-${i}"></div>
   </div>`;
 }
@@ -2045,17 +2005,35 @@ function removeA2Row(pid, i) {
 function renderParkSelectors(pid) {
   const rowCount = att2Rows[pid] || 1;
   const parkR = S.receipts.filter(r => r.category === 'parking' && r.projectId === pid);
+
+  // 從已存的 fieldRows 讀取每行的 pairedParkIdx
+  const savedRows = (() => {
+    for (const r of S.receipts.filter(x => x.projectId === pid)) {
+      if (r.fieldRows && r.fieldRows.length) return r.fieldRows;
+    }
+    return [];
+  })();
+
   for (let i = 0; i < rowCount; i++) {
     const el = document.getElementById(`a2park-sel-${pid}-${i}`);
     if (!el) continue;
     if (!parkR.length) { el.innerHTML = ''; continue; }
-    el.innerHTML = `<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px">🅿️ 此筆外勤關聯停車費（可多選）：</div>` +
-      parkR.map((r, ri) => `
+    const savedPairedArr = (() => {
+      const fr = savedRows[i];
+      if (!fr) return [];
+      if (Array.isArray(fr.pairedParkIdxArr)) return fr.pairedParkIdxArr;
+      // 向後相容：舊資料只有 pairedParkIdx（單一數字）
+      return fr.pairedParkIdx != null ? [fr.pairedParkIdx] : [];
+    })();
+    el.innerHTML = `...` +
+      parkR.map((r, ri) => {
+        const isChecked = savedPairedArr.includes(ri);
+        return `
         <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-bottom:4px">
-          <div class="chkbox" id="a2pk-${pid}-${i}-${ri}" onclick="onParkToggle('${pid}',${i},${ri},false)"></div>
+          <div class="chkbox${isChecked ? ' on' : ''}" id="a2pk-${pid}-${i}-${ri}" onclick="onParkToggle('${pid}',${i},${ri},false)"></div>
           🅿️ ${r.vendor} · ${r.date} · <span class="mono">$${r.amount.toLocaleString()}</span>
-        </label>`
-      ).join('');
+        </label>`;
+      }).join('');
   }
 }
 
@@ -2108,6 +2086,7 @@ function onParkToggle(pid, rowIdx, parkIdx, isAtt4) {
     // 更新附件四空白提示
     syncAtt4Empty(pid);
   }
+
 }
 
 // 檢查附件四是否所有列都已配對，顯示提示文字
@@ -2153,6 +2132,69 @@ function att4Form(pid, rs) {
 // EXPORT ACTION
 // ════════════════════════════════════════════════════════════
 // 只匯出勾選的 sec
+// 載入此人此月份的歷史匯出紀錄，進整理匯出頁時自動呼叫
+async function loadExportHistory() {
+  const person = document.getElementById('exp-person')?.value || '';
+  const month  = document.getElementById('exp-month')?.value  || '';
+  // 人或月份未選時不顯示（避免撈出全部）
+  if (!person || !month) return;
+  try {
+    const res = await callGAS({ action: 'getHistory', person, month });
+    const rows = res.rows || [];
+    if (!rows.length) return; // 無歷史，不顯示卡片
+    _renderPdfTable(rows.map(r => ({
+      label:  r.attachment || r.project,
+      url:    r.pdfUrl,
+      timeD:  r.time ? r.time.slice(0, 10) : '',
+      timeH:  r.time ? r.time.slice(11, 16) : '',
+      isHist: true,
+    })), false /*noScroll*/);
+  } catch(e) { /* 靜默失敗 */ }
+}
+
+// 本次匯出完成後呼叫
+function renderPdfResultList(urls, labels) {
+  const _now = new Date();
+  const dateStr = _now.toLocaleDateString('zh-TW');
+  const timeStr = _now.toLocaleTimeString('zh-TW', { hour12: false });
+  const items = urls.map((url, i) => ({
+    label:  (labels && labels[i]) ? labels[i] : `PDF ${i + 1}`,
+    url,
+    timeD:  dateStr,
+    timeH:  timeStr,
+    isHist: false,
+  }));
+  _renderPdfTable(items, true /*scroll*/);
+}
+
+// 共用渲染：items = [{label, url, timeD, timeH, isHist}]
+function _renderPdfTable(items, scroll) {
+  const card = document.getElementById('pdfResultCard');
+  const cnt  = document.getElementById('pdfResultCnt');
+  const tbl  = document.getElementById('pdfResultTbl');
+  if (!card || !tbl) return;
+
+  const rows = items.map(it => {
+    const badge = it.isHist
+      ? `<span style="font-size:10px;background:var(--muted);color:#fff;border-radius:3px;padding:1px 5px;margin-left:6px;opacity:.7">歷史</span>`
+      : `<span style="font-size:10px;background:var(--green,#4caf50);color:#fff;border-radius:3px;padding:1px 5px;margin-left:6px">新產生</span>`;
+    return `<tr style="${it.isHist ? 'opacity:.82' : ''}">
+      <td style="font-size:13px;padding:10px 14px">${it.label}${badge}</td>
+      <td style="padding:10px 14px;font-size:11px;color:var(--muted);line-height:1.6">${it.timeD}<br>${it.timeH}</td>
+      <td style="padding:10px 14px">
+        <a href="${it.url}" target="_blank" style="color:var(--accent);font-size:12px;text-decoration:none">開啟↗</a>
+      </td>
+    </tr>`;
+  }).join('');
+
+  tbl.innerHTML = `<thead><tr>
+    <th>檔案</th><th>匯出時間</th><th></th>
+  </tr></thead>` + (rows || '<tr><td colspan="3" style="color:var(--muted);padding:14px">無結果</td></tr>');
+  cnt.textContent = `共 ${items.length} 份`;
+  card.style.display = 'block';
+  if (scroll) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
 async function doExportSelected() {
   const selected = [...document.querySelectorAll('.exp-sec')]
     .filter(s => s.querySelector('.sec-ck')?.classList.contains('on'));
@@ -2185,8 +2227,23 @@ async function _doExport(secKeys) {
         start:   document.getElementById(`a2s-${pid}-${i}`)?.value    || '',
         end:     document.getElementById(`a2e-${pid}-${i}`)?.value    || '',
         km:      parseFloat(document.getElementById(`a2km-${pid}-${i}`)?.value) || 0,
-        isRound: document.getElementById(`a2rnd-${pid}-${i}`)?.classList.contains('on') ?? true,
-        rate:    mRate,
+        isRound:       document.getElementById(`a2rnd-${pid}-${i}`)?.classList.contains('on') ?? true,
+        rate:          mRate,
+        mapUrl:        document.getElementById(`a2map-url-${pid}-${i}`)?.value || '',
+        remark:  document.getElementById(`a2rem-${pid}-${i}`)?.value || '',
+        pairedParkIdxArr: (() => {
+          const parkR_all = S.receipts.filter(x => x.category === 'parking' && x.projectId === pid);
+          return parkR_all
+            .map((_, ri) => ri)
+            .filter(ri => document.getElementById(`a2pk-${pid}-${i}-${ri}`)?.classList.contains('on'));
+        })(),
+        pairedParkIdx: (() => {  // 向後相容
+          const parkR_all = S.receipts.filter(x => x.category === 'parking' && x.projectId === pid);
+          const idx = parkR_all.findIndex((_, ri) =>
+            document.getElementById(`a2pk-${pid}-${i}-${ri}`)?.classList.contains('on')
+          );
+          return idx >= 0 ? idx : null;
+        })(),
       });
     }
     if (rows.length) projFieldRowsMap[pid] = rows;
@@ -2258,6 +2315,10 @@ async function _doExport(secKeys) {
     if (!receiptsToExport.length) { toast('⚠️ 無可匯出的憑證'); return; }
   }
 
+  // ── 先暫存，再匯出 ──────────────────────────────────────
+  toast('⏳ 暫存中...');
+  try { await doStashAll(); } catch(_) { /* doStashAll 自行處理 toast，不阻斷 */ }
+
   toast(`⏳ 產生 PDF 中（${receiptsToExport.length} 筆）...`);
   try {
     const res = await callGAS({
@@ -2266,8 +2327,10 @@ async function _doExport(secKeys) {
       projects: S.config.projects
     });
     if (res.success) {
-      toast(`✅ PDF 已產生！共 ${(res.urls||[]).length} 份`);
-      (res.urls||[]).forEach(u => window.open(u,'_blank'));
+      const urls   = res.urls   || [];
+      const labels = res.labels || [];
+      toast(`✅ PDF 已產生！共 ${urls.length} 份`);
+      renderPdfResultList(urls, labels);
     } else { toast('❌ ' + res.error); }
   } catch(e) { toast('❌ ' + e.message); }
 }
@@ -2283,8 +2346,18 @@ function nav(name) {
   if (name==='export') {
     if (S.receipts.length === 0) loadOcrResults(true, true);
     else refreshExport();
+    loadExportHistory(); // 進頁時顯示已有的匯出紀錄
   }
-  if (name==='ocr' && S.receipts.length === 0) loadOcrResults(true);
+  if (name==='ocr') {
+    if (S.receipts.length === 0) {
+      loadOcrResults(true);
+    } else {
+      renderOCRResults();
+      const doneBar = document.getElementById('ocrDoneBar');
+      if (doneBar) doneBar.style.cssText = 'display:flex;margin-top:12px;gap:8px';
+      setStep(3);
+    }
+  }
   // 手機版切頁後關閉 sidebar
   document.getElementById('mainSidebar')?.classList.remove('open');
   document.getElementById('sidebarOverlay')?.classList.remove('open');
@@ -2302,111 +2375,77 @@ function setStep(n) {
 }
 
 // ════════════════════════════════════════════════════════════
-// GOOGLE MAPS
+// GOOGLE MAPS — 查詢最短距離 + 靜態地圖截圖
+// GAS 回傳：{ km, distText, duration }
 // ════════════════════════════════════════════════════════════
 async function queryMaps(pid, i) {
   const origin = document.getElementById(`a2s-${pid}-${i}`)?.value?.trim();
   const dest   = document.getElementById(`a2e-${pid}-${i}`)?.value?.trim();
   if (!origin || !dest) { toast('⚠️ 請填入起點和終點'); return; }
 
-  const btn = event.target;
-  btn.disabled = true; btn.textContent = '⏳ 查詢中';
+  const btn = document.getElementById(`a2mapbtn-${pid}-${i}`);
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spin"></div> 查詢中';
 
-  let km = 0, durationText = '', distText = '';
   try {
-    const res = await callGAS({ action:'getDistance', origin, dest });
-    if (res.success) {
-      km           = res.km;
-      durationText = res.duration;
-      distText     = res.distText;
-    } else { throw new Error('GAS 連線失敗，請確認網路或聯絡管理員'); }
+    const res = await callGAS({ action: 'getDistance', origin, dest });
+    if (!res.success) throw new Error(res.error || 'GAS 查詢失敗');
 
-    mapsCtx = { pid, i, km, origin, dest };
+    const { km, distText, duration } = res;
 
-    const res_el = document.getElementById(`a2km-result-${pid}-${i}`);
-    if (res_el) res_el.innerHTML = `<span class="km-result">📍 ${distText} · ⏱ ${durationText} · <strong>${km} km</strong></span>
-      <button class="btn btn-green btn-sm" style="margin-left:8px" onclick="applyKmInline('${pid}',${i},${km})">套用</button>`;
+    // ── 填入唯讀公里數欄位 ──────────────────────────────────
+    const kmEl = document.getElementById(`a2km-${pid}-${i}`);
+    if (kmEl) kmEl.value = km;
 
-    showMapsModal(origin, dest, km, distText, durationText, pid, i);
+    // ── 結果 chip ──────────────────────────────────────────
+    const resEl = document.getElementById(`a2km-result-${pid}-${i}`);
+    if (resEl) {
+      resEl.innerHTML =
+        `<span class="km-result">📍 ${distText} · ⏱ ${duration} · <strong>${km} km</strong></span>` +
+        `<a href="https://www.google.com/maps/dir/${encodeURIComponent(origin)}/${encodeURIComponent(dest)}"` +
+        ` target="_blank" class="maps-link">↗ Maps</a>`;
+    }
+
+    // ── 靜態地圖預覽（用連結取代圖片，避免 API key 外漏 & 破圖）────
+    const mapsLink = `https://www.google.com/maps/dir/${encodeURIComponent(origin)}/${encodeURIComponent(dest)}`;
+    const prevEl = document.getElementById(`a2map-prev-${pid}-${i}`);
+    const urlEl  = document.getElementById(`a2map-url-${pid}-${i}`);
+    if (prevEl) {
+      prevEl.classList.add('show');
+      prevEl.innerHTML = `<a href="${mapsLink}" target="_blank"
+        style="display:flex;align-items:center;justify-content:center;gap:8px;
+               padding:14px;background:rgba(79,142,247,.07);color:var(--accent);
+               font-size:13px;font-weight:600;text-decoration:none;border-radius:8px">
+        🗺 在 Google Maps 開啟路線↗
+      </a>`;
+    }
+    if (urlEl) urlEl.value = mapsLink;   // 匯出時供 GAS 參考
+
+    toast(`✅ 最短距離：${distText}（${km} km）`);
   } catch(e) {
     toast('❌ Maps 查詢失敗：' + e.message);
   }
-  btn.disabled = false; btn.textContent = '🗺 Maps';
+
+  btn.disabled = false;
+  btn.innerHTML = '🗺 查詢最短距離';
 }
 
-function showMapsModal(origin, dest, km, dist, dur, pid, i) {
-  const isRound = document.getElementById(`a2rnd-${pid}-${i}`)?.classList.contains('on');
-  const rate    = parseFloat(document.getElementById('a2rate-'+pid)?.value) || getMileageRate();
-  const totalKm = km * (isRound ? 2 : 1);
-  const subsidy = Math.round(totalKm * rate);
-
-  document.getElementById('mapsModalBody').innerHTML = `
-    <div style="background:var(--surface2);border-radius:10px;padding:14px;margin-bottom:14px">
-      <div class="info-row"><span>起點</span><span style="font-weight:600">${origin}</span></div>
-      <div class="info-row"><span>終點</span><span style="font-weight:600">${dest}</span></div>
-      <div class="info-row"><span>單程距離</span><span class="mono" style="color:var(--green);font-weight:700">${dist} (${km} km)</span></div>
-      <div class="info-row"><span>預估時間</span><span>${dur}</span></div>
-    </div>
-    <div class="calc-box">
-      <div class="calc-row"><span>單程公里數</span><span class="mono">${km} km</span></div>
-      <div class="calc-row"><span>${isRound?'來回 ×2':'單程 ×1'}</span><span class="mono">${totalKm} km</span></div>
-      <div class="calc-row"><span>補助標準</span><span class="mono">${rate} 元/km</span></div>
-      <div class="calc-row calc-tot"><span>里程補助</span><span class="mono">$${subsidy.toLocaleString()}</span></div>
-    </div>
-    <div style="margin-top:12px">
-      <a href="https://www.google.com/maps/dir/${encodeURIComponent(origin)}/${encodeURIComponent(dest)}" target="_blank" class="maps-link" style="display:inline-flex">
-        🗺 在 Google Maps 中開啟路線
-      </a>
-    </div>`;
-
-  mapsCtx = { pid, i, km };
-  openModal('mapsModal');
-}
-
-function applyKm() { applyKmInline(mapsCtx.pid, mapsCtx.i, mapsCtx.km); closeModal('mapsModal'); }
-
-function applyKmInline(pid, i, km) {
-  const el = document.getElementById(`a2km-${pid}-${i}`);
-  if (el) { el.value = km; calcAtt2(pid); }
-  toast(`✅ 已套用 ${km} km`);
-}
-
-function calcAtt2(pid) {
-  const rate = parseFloat(document.getElementById('a2rate-'+pid)?.value) || getMileageRate();
-  let kmSub = 0;
-  for (let i=0; i<(att2Rows[pid]||1); i++) {
-    const km  = parseFloat(document.getElementById(`a2km-${pid}-${i}`)?.value) || 0;
-    const isR = document.getElementById(`a2rnd-${pid}-${i}`)?.classList.contains('on');
-    kmSub += km * (isR ? 2 : 1) * rate;
-  }
-  kmSub = Math.round(kmSub);
-
-  // 停車費：加總各外勤行勾選的停車費
-  const parkR = S.receipts.filter(r => r.category === 'parking' && r.projectId === pid);
-  const rowCount = att2Rows[pid] || 1;
-  const checkedParkIds = new Set();
-  for (let i = 0; i < rowCount; i++) {
-    parkR.forEach((r, ri) => {
-      if (document.getElementById(`a2pk-${pid}-${i}-${ri}`)?.classList.contains('on')) {
-        checkedParkIds.add(ri);
-      }
-    });
-  }
-  const parkTotal = parkR.filter((_, ri) => checkedParkIds.has(ri)).reduce((s,r)=>s+r.amount,0);
-
-  se('a2sub-'+pid, '$'+kmSub.toLocaleString());
-  se('a2tot-'+pid, '$'+(kmSub+parkTotal).toLocaleString());
-  // 更新停車費顯示
-  const pd = document.getElementById('a2park-total-display-'+pid);
-  if (pd && checkedParkIds.size > 0) {
-    pd.textContent = `已選 ${checkedParkIds.size} 筆，合計 $${parkTotal.toLocaleString()}`;
-    pd.style.color = 'var(--green)';
-  }
-}
 
 // ════════════════════════════════════════════════════════════
-// STASH ALL — 全部回寫 OcrResults
+// STASH
 // ════════════════════════════════════════════════════════════
+async function stashThenExport() {
+  const btn = document.getElementById('btnGoExport');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<div class="spin"></div> 暫存中...'; }
+  try {
+    await doStashAll();
+  } catch(e) {
+    // doStashAll handles its own toasts; just continue navigating
+  }
+  if (btn) { btn.disabled = false; btn.innerHTML = '📄 前往整理匯出 →'; }
+  nav('export');
+}
+
 async function doStashAll() {
   if (!S.receipts.length) { toast('⚠️ 沒有可暫存的憑證'); return; }
 
@@ -2415,17 +2454,28 @@ async function doStashAll() {
     let attributionTarget = '';
     if (attribution === 'project') attributionTarget = r.projectId || '';
     else if (attribution === 'dept') attributionTarget = r.dept || '';
+    else if (attribution === 'other') attributionTarget = '其他';
     const key = r.ocrKey || (r.invoiceNo && r.invoiceNo.trim() ? r.invoiceNo.trim() : r.id);
     if (!key) return null;
 
     // ── 讀取附件二外勤欄位（從 DOM 取得使用者填入值）──
-    const pid = r.projectId || '';
+    // 決定此 receipt 所屬的 pid：專案用 projectId，dept/other 用 att2PidMap 查 sanitized key
+    const att2Key = r.attribution === 'project' ? 'proj:' + (r.projectId || '')
+                  : r.attribution === 'dept'    ? 'dept:' + (r.dept || '')
+                  : 'other';
+    const pid = r.projectId || att2PidMap[att2Key] || '';
     const rowCount = att2Rows[pid] || 0;
     const fieldRows = [];
     for (let i = 0; i < rowCount; i++) {
-      // 確認此外勤行確實屬於這張 receipt 所在的專案
+      // 確認此外勤行確實屬於這張 receipt 所在的群組
       const rowEl = document.getElementById(`a2r-${pid}-${i}`);
       if (!rowEl) continue;
+      // 讀取此外勤行勾選的停車費索引（單選，最多一個）
+      const parkR_all = S.receipts.filter(x => x.category === 'parking' &&
+        (r.projectId ? x.projectId === r.projectId : (x.dept === r.dept && x.attribution === r.attribution)));
+      const pairedParkIdxArr = parkR_all
+        .map((_, ri) => ri)
+        .filter(ri => document.getElementById(`a2pk-${pid}-${i}-${ri}`)?.classList.contains('on'));
       fieldRows.push({
         date:    document.getElementById(`a2d-${pid}-${i}`)?.value    || '',
         reason:  document.getElementById(`a2rsn-${pid}-${i}`)?.value  || '',
@@ -2433,6 +2483,10 @@ async function doStashAll() {
         end:     document.getElementById(`a2e-${pid}-${i}`)?.value    || '',
         km:      document.getElementById(`a2km-${pid}-${i}`)?.value   || '',
         isRound: document.getElementById(`a2rnd-${pid}-${i}`)?.classList.contains('on') ?? true,
+        mapUrl:  document.getElementById(`a2map-url-${pid}-${i}`)?.value || '',
+        remark:  document.getElementById(`a2rem-${pid}-${i}`)?.value || '',
+        pairedParkIdxArr,          // 陣列，可能是 [] / [0] / [1,2]
+        pairedParkIdx: pairedParkIdxArr[0] ?? null,  // 向後相容舊版 GAS
       });
     }
 
@@ -2464,10 +2518,10 @@ async function doStashAll() {
 
   if (!updates.length) { toast('⚠️ 憑證缺少辨識 Key，請先執行 OCR'); return; }
 
-  setBtnLoading('btnStash',    true,  '暫存中...');
+  setBtnLoading('btnStashBar', true,  '暫存中...');
   setBtnLoading('btnOcrStash', true,  '暫存中...');
   const res = await callGAS({ action: 'stashSelected', updates });
-  setBtnLoading('btnStash',    false, '💾 暫存');
+  setBtnLoading('btnStashBar', false, '💾 暫存');
   setBtnLoading('btnOcrStash', false, '💾 暫存');
 
   if (res.success) {
@@ -2577,6 +2631,8 @@ async function loadOcrResults(auto = false, fromExport = false) {
 function syncOcrMonth(val) {
   const el = document.getElementById('ocr-month');
   if (el && val) el.value = val;
+  loadDriveFiles();    // 月份變更時重新載入雲端憑證清單
+  loadExportHistory(); // 月份變更時重新載入匯出歷史
 }
 
 // ════════════════════════════════════════════════════════════
