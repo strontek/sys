@@ -525,10 +525,10 @@ select.inp{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.
                   <th>專案 ID</th>
                   <th style="min-width:220px">名稱</th>
                   <th>部門</th>
-                  <th>類型</th>
+                  <th style="min-width:72px">類型</th>
                   <th>核定補助</th>
-                  <th>生效日</th>
-                  <th>結案日</th>
+                  <th style="min-width:62px">生效日</th>
+                  <th style="min-width:62px">結案日</th>
                   <th></th>
                 </tr>
               </thead>
@@ -570,7 +570,7 @@ select.inp{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.
 // CONFIG
 // ════════════════════════════════════════════════════════════
 const CFG = {
-  GAS_URL: 'https://script.google.com/macros/s/AKfycbx3cQMDpX8k_RyAdEd2X3Ro6juWzIKe-2g1XYAp-zEO9p6im-30FmpV0qpeaJHtAMJO/exec'
+  GAS_URL: 'https://script.google.com/macros/s/AKfycbxXR39PY2JplA6h5CdVDxfA9RCvk3zjQnVwijVL2w44ZQ7ZklSErjvurnUX5vs6_waZhw/exec'
 };
 
 // LINE 登入按鈕標籤（兩處共用，避免 SVG 各自維護）
@@ -833,8 +833,7 @@ function doReloadAll() {
   } else if (activePage === 'page-history') {
     loadExportHistory(true);
   } else if (activePage === 'page-project') {
-    loadConfig();
-    loadProjectList(true);
+    loadConfig().then(() => loadProjectList(true));
   } else {
     loadConfig();
   }
@@ -1472,10 +1471,8 @@ function detectCat(item) {
   if (raw === 'other'   || raw === '其他') return 'other';
 
   // 依廠商名稱 + 備註關鍵字自動判斷
-  const s = JSON.stringify(item);
-  // 停車費優先（避免停車場名稱誤判為油資）
+  const s = (item.vendor || '') + ' ' + (item.notes || '') + ' ' + (item.merchant || '');
   if (/停車|parking|car\s*park|車位|泊車|路邊停/i.test(s)) return 'parking';
-  // 加油站常見名稱（擴充）
   if (/中油|台塑油|全國加油|速邁樂|cpc|fuel|加油|油資|汽油|柴油|台灣中油|鑫澤|佳吉|車用油|協榮|優力|加油站|油站|95無鉛|98無鉛|超柴|台亞|全國油|中國石油|油品/i.test(s)) return 'fuel';
   return 'other';
 }
@@ -3452,7 +3449,7 @@ function populateNpDept() {
   if (!sel) return;
   const depts = S.config.departments || [];
   sel.innerHTML = '<option value="">— 選擇部門 —</option>' +
-    depts.map(d => `<option value="${d.code}">${d.code} ${d.name}</option>`).join('');
+    depts.map(d => `<option value="${d.code}">${d.name}</option>`).join('');
 }
 
 // 月定額 toggle
@@ -3549,11 +3546,16 @@ async function loadProjectList(showToast) {
 function renderProjectList(rows) {
   const tbody = document.getElementById('projListTbl');
   if (!tbody) return;
-  if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px">尚無專案</td></tr>';
+
+  // 僅顯示使用者有權限的部門（userDeptCode 或 deptCode 為空的全域專案）
+  const myDeptCode = S.config.userDeptCode || '';
+  const filtered = rows.filter(p => !p.deptCode || p.deptCode === myDeptCode);
+
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px">尚無可用專案</td></tr>';
     return;
   }
-  tbody.innerHTML = rows.map((p, i) => {
+  tbody.innerHTML = filtered.map((p, i) => {
     const quoteBadge = p.quota
       ? '<span class="badge bd-blue">月定額</span>'
       : '<span class="badge bd-muted">里程實報</span>';
@@ -3563,7 +3565,10 @@ function renderProjectList(rows) {
     return `<tr id="prow-${i}">
       <td style="font-weight:800;font-family:monospace">${p.id}${newTag}</td>
       <td style="font-weight:700">${p.name}</td>
-      <td style="font-size:13px;color:var(--muted)">${p.deptCode||'—'}</td>
+      <td style="font-size:13px;color:var(--muted)">${(() => {
+        const d = (S.config.departments||[]).find(x => x.code === p.deptCode);
+        return d ? d.name : (p.deptCode || '—');
+      })()}</td>
       <td>${quoteBadge}</td>
       <td class="mono" style="color:var(--gold)">${p.quota && p.subsidy ? '$'+p.subsidy.toLocaleString() : '—'}</td>
       <td style="font-size:13px;color:var(--muted)">${p.effectDate||'—'}</td>
@@ -3592,7 +3597,7 @@ function doEditProject(i) {
   if (next?.id === 'prow-edit-'+i) { next.remove(); return; }
 
   const deptOpts = (S.config.departments || []).map(d =>
-    `<option value="${d.code}" ${d.code===p.deptCode?'selected':''}>${d.code} ${d.name}</option>`
+    `<option value="${d.code}" ${d.code===p.deptCode?'selected':''}>${d.name}</option>`
   ).join('');
 
   const editTr = document.createElement('tr');
@@ -3864,17 +3869,21 @@ async function loadExportHistory(showToast) {
 // ════════════════════════════════════════════════════════════
 async function callGAS(payload) {
   try {
-    const res = await fetch(CFG.GAS_URL, {
+    const ctrl = new AbortController();
+    const tid  = setTimeout(() => ctrl.abort(), 60000);
+    const res  = await fetch(CFG.GAS_URL, {
       method:  'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body:    JSON.stringify(payload),
+      signal:  ctrl.signal,
     });
+    clearTimeout(tid);
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    const text = await res.text();
-    return JSON.parse(text);
+    return JSON.parse(await res.text());
   } catch (err) {
-    console.warn('[callGAS] 失敗:', payload.action, err.message);
-    return { success:false, error:err.message };
+    const msg = err.name === 'AbortError' ? '請求逾時（60s）' : err.message;
+    console.warn('[callGAS] 失敗:', payload.action, msg);
+    return { success: false, error: msg };
   }
 }
 
@@ -3956,26 +3965,26 @@ async function pdfToJpegFiles(file, fileIdx = 1, fileTotal = 1) {
 
 function toJpegViaCanvas(file, quality = 0.88) {
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      const MAX = 2400;
-      let { naturalWidth: w, naturalHeight: h } = img;
-      if (w > MAX || h > MAX) {
-        if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
-        else       { w = Math.round(w * MAX / h); h = MAX; }
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width  = w;
-      canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      canvas.toBlob(blob => {
-        URL.revokeObjectURL(url);
-        resolve(blob);
-      }, 'image/jpeg', quality);
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 2400;
+        let { naturalWidth: w, naturalHeight: h } = img;
+        if (w > MAX || h > MAX) {
+          if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+          else       { w = Math.round(w * MAX / h); h = MAX; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width  = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        canvas.toBlob(resolve, 'image/jpeg', quality);
+      };
+      img.onerror = () => reject(new Error('圖片載入失敗'));
+      img.src = e.target.result;
     };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('圖片載入失敗')); };
-    img.src = url;
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
   });
 }
 
@@ -4005,22 +4014,18 @@ function setBtnLoading(id, loading, label) {
 }
 
 // ── Table 狀態列 helper ──────────────────────────────────────
-function loadingRow(cols, msg='載入中...') {
-  return `<tr><td colspan="${cols}" style="text-align:center;color:var(--muted);padding:28px">
+function tableStatusRow(cols, msg, type='empty') {
+  if (type === 'loading') return `<tr><td colspan="${cols}" style="text-align:center;color:var(--muted);padding:28px">
     <div style="display:inline-flex;align-items:center;gap:10px;font-size:15px">
       <div style="width:18px;height:18px;border:2.5px solid var(--border2);
-        border-top-color:var(--accent);border-radius:50%;
-        animation:rot .7s linear infinite"></div>
-      ${msg}
-    </div>
-  </td></tr>`;
+        border-top-color:var(--accent);border-radius:50%;animation:rot .7s linear infinite"></div>
+      ${msg}</div></td></tr>`;
+  const color = type === 'error' ? 'var(--red)' : 'var(--muted)';
+  return `<tr><td colspan="${cols}" style="text-align:center;color:${color};padding:28px;font-size:15px">${msg}</td></tr>`;
 }
-function emptyRow(cols, msg='尚無資料') {
-  return `<tr><td colspan="${cols}" style="text-align:center;color:var(--muted);padding:32px;font-size:15px">${msg}</td></tr>`;
-}
-function errorRow(cols, msg='❌ 載入失敗，請重試') {
-  return `<tr><td colspan="${cols}" style="text-align:center;color:var(--red);padding:28px;font-size:15px">${msg}</td></tr>`;
-}
+const loadingRow = (cols, msg='載入中...')           => tableStatusRow(cols, msg, 'loading');
+const emptyRow   = (cols, msg='尚無資料')             => tableStatusRow(cols, msg, 'empty');
+const errorRow   = (cols, msg='❌ 載入失敗，請重試') => tableStatusRow(cols, msg, 'error');
 // ════════════════════════════════════════════════════════════
 // DEBUG SNAPSHOT — 傳送前端狀態到 GAS DebugLog sheet
 // ════════════════════════════════════════════════════════════
@@ -4098,12 +4103,13 @@ async function sendDebugSnapshot() {
 function retryOCR(rcId) {
   const r = S.receipts.find(x => x.id === rcId);
   if (!r) return;
-  // source 即原始檔名，找 ocrQueue 有無對應（避免重複加）
-  const alreadyQueued = S.ocrQueue.find(q => q.name === r.source);
-  if (alreadyQueued) {
-    alreadyQueued.status = 'pending';
+  // 只有仍在等待/處理中的同名項目才算「已在佇列」，已完成/失敗的不擋
+  const active = S.ocrQueue.find(q => q.name === r.source &&
+    (q.status === 'pending' || q.status === 'processing'));
+  if (active) {
+    active.status = 'pending';   // 重設為待辨識
   } else {
-    S.ocrQueue.push({ id: rcId.replace('_err',''), name: r.source || rcId, status: 'pending', qAttribution: 'project' });
+    S.ocrQueue.push({ id: 'retry_' + Date.now(), name: r.source || rcId, status: 'pending', qAttribution: 'project' });
   }
   badge('nb-ocr', S.ocrQueue.length);
   renderQueue();
