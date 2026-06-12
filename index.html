@@ -1500,7 +1500,8 @@ function renderOCRResults() {
     _ocrTab = tabs.fuel.length ? 'fuel' : tabs.parking.length ? 'parking' : 'other';
   }
 
-  const fuelAmt  = tabs.fuel.reduce((s, r) => s + r.amount, 0);
+  // 油資 tab 顯示的是「申請總額」（來自 FuelProjects），不是單據金額加總
+  const fuelAmt  = calcFuelApplyTotal();
   const parkAmt  = tabs.parking.reduce((s, r) => s + r.amount, 0);
   const otherAmt = tabs.other.reduce((s, r) => s + r.amount, 0);
 
