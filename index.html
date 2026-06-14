@@ -3728,7 +3728,9 @@ async function doStashAll(silent = false) {
     return null; // projectId 不明時不猜測，避免誤配對
   };
 
-  const updates = S.receipts.map(r => {
+  const updates = S.receipts
+    .filter(r => r.status !== 'error')  // 辨識失敗的佔位卡片不暫存，避免存入 Sheet 後失去 error 標記
+    .map(r => {
     const key = r.ocrKey || (r.invoiceNo && r.invoiceNo.trim() ? r.invoiceNo.trim() : r.id);
     if (!key) return null;
     const fuelFp = r.category === 'fuel' ? fuelProjForReceipt(r) : null;
