@@ -290,11 +290,6 @@ select.inp{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.
         <button class="btn btn-ghost btn-sm" id="btnReload" onclick="doReloadAll()" title="重新從 Sheet 載入">🔄</button>
         <span id="fuelLastSyncLabel" style="font-size:11px;color:var(--muted);display:none"></span>
       </div>
-      <div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
-        <button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--muted);width:100%"
-          onclick="sendDebugSnapshot()" title="傳送前端狀態快照到 DebugLog Sheet">🐛 Debug 快照</button>
-        <div id="debugSnapStatus" style="font-size:11px;color:var(--muted);margin-top:4px;text-align:center"></div>
-      </div>
     </div>
   </div>
 
@@ -1397,6 +1392,8 @@ async function runOCR() {
             rec._isDuplicate    = true;
             rec._duplicateOfKey = item.duplicateOfKey || '';
             rec._tempKey        = item.key || '';
+            rec._duplicateOwner = item.duplicateOwner || '';
+            rec._duplicateOwnerIsSelf = item.duplicateOwnerIsSelf !== false;
           }
           S.receipts.push(rec);
         }
@@ -1459,6 +1456,8 @@ function mkReceipt(id, qf, item, idx, isNew) {
     _isDuplicate:    item.isDuplicate    || false,
     _duplicateOfKey: item.duplicateOfKey || '',
     _tempKey:        item.isDuplicate ? (item.key || '') : '',
+    _duplicateOwner: item.duplicateOwner || '',
+    _duplicateOwnerIsSelf: item.duplicateOwnerIsSelf !== false,
   };
 }
 
@@ -1689,7 +1688,7 @@ function updateOtherApplyBtn() {
 function applyOtherAttr() {
   if (!_otherSelectedItem) return;
   const item = _otherSelectedItem;
-  // 套用歸屬到所有已勾選的其他費用（不自動勾選/取消勾選任何項目）
+  // 套用歸屬到所有已勾選的其他費用
   S.receipts
     .filter(r => r.category !== 'fuel' && document.getElementById('rck-'+r.id)?.classList.contains('on'))
     .forEach(r => {
@@ -1701,6 +1700,12 @@ function applyOtherAttr() {
   _otherSelectedItem = null;
   const btn = document.getElementById('btn-other-apply');
   if (btn) btn.disabled = true;
+
+  // ── 套用後檢查：若仍有未設定歸屬的項目，全部取消勾選，方便使用者逐一勾選設定歸屬；
+  //    若已全部設定完畢，全部勾選方便匯出 ──
+  const otherList = S.receipts.filter(r => r.category !== 'fuel' && r.status !== 'error');
+  const hasUnassigned = otherList.some(r => !r.otherAttr);
+  otherList.forEach(r => { r._checked = !hasUnassigned; });
 
   renderOCRResults();
   updateStats();
@@ -2405,6 +2410,18 @@ function rcHTML(r) {
             <input class="inp" id="err-date-${r.id}" type="date" value="${r.date||''}"
               onchange="upR('${r.id}','date',this.value);stashSingle('${r.id}')">
           </div>
+          <div style="width:160px">
+            <label class="lbl">發票號碼</label>
+            <input class="inp" id="err-invoiceno-${r.id}" value="${esc(r.invoiceNo||'')}" placeholder="發票號碼或收據編號"
+              onchange="upR('${r.id}','invoiceNo',this.value);stashSingle('${r.id}')">
+          </div>
+        </div>
+        <div>
+          <label class="lbl">費用類別</label>
+          <div class="tgl" style="width:200px" id="err-tgl-cat-${r.id}">
+            <button class="tgl-btn ${r.category==='fuel'?'on':''}" onclick="setErrCat('${r.id}','fuel')">⛽ 油資</button>
+            <button class="tgl-btn ${r.category!=='fuel'?'on':''}" onclick="setErrCat('${r.id}','other')">📄 其他</button>
+          </div>
         </div>
         <div>
           <label class="lbl">申請說明</label>
@@ -3096,6 +3113,10 @@ function renderDupModal(r) {
   const oldKeyMonth  = oldKey.match(/^(\d{6})-\d{3}$/) ? oldKey.slice(0, 6) : '';
   const isCrossMonth = oldKeyMonth && oldKeyMonth !== currentMonth;
 
+  // 判斷是否非同一申請人：非本人時不可覆蓋
+  const isOtherPerson = r._duplicateOwnerIsSelf === false;
+  const noOverwrite = isCrossMonth || isOtherPerson;
+
   document.getElementById('dupModalBody').innerHTML = `
     <div style="background:var(--surface2);border-radius:10px;padding:14px;margin-bottom:12px">
       <div class="info-row">
@@ -3115,7 +3136,13 @@ function renderDupModal(r) {
         <span class="mono" style="color:var(--amber);font-weight:700">${r._duplicateOfKey}</span>
       </div>
     </div>
-    ${isCrossMonth
+    ${isOtherPerson
+      ? `<div style="background:rgba(234,179,8,.1);border:1px solid rgba(234,179,8,.3);border-radius:8px;padding:12px;font-size:13px;line-height:1.8;margin-bottom:4px">
+           <div style="color:#92400e;font-weight:700;margin-bottom:4px">⚠️ 此發票號碼已由其他申請人登錄</div>
+           <div style="color:var(--muted)">此發票號碼 <span class="mono" style="color:var(--text)">${r._duplicateOfKey}</span> 已存在於 <strong>${r._duplicateOwner || '其他申請人'}</strong> 的紀錄中。</div>
+           <div style="color:var(--muted);margin-top:4px">非同一申請人不可覆蓋，請選擇「新增流水號」保留本筆，或確認是否為重複申請。</div>
+         </div>`
+      : isCrossMonth
       ? `<div style="background:rgba(234,179,8,.1);border:1px solid rgba(234,179,8,.3);border-radius:8px;padding:12px;font-size:13px;line-height:1.8;margin-bottom:4px">
            <div style="color:#92400e;font-weight:700;margin-bottom:4px">⚠️ 跨月重複發票</div>
            <div style="color:var(--muted)">此發票號碼 <span class="mono" style="color:var(--text)">${r._duplicateOfKey}</span> 已存在於 <strong>${oldKeyMonth.slice(0,4)}-${oldKeyMonth.slice(4)}</strong> 月份紀錄中。</div>
@@ -3128,12 +3155,12 @@ function renderDupModal(r) {
          </div>`
     }`;
 
-  // 跨月時禁用覆蓋按鈕
+  // 跨月或非同一申請人時禁用覆蓋按鈕
   const btnOverwrite = document.getElementById('btnDupOverwrite');
   if (btnOverwrite) {
-    btnOverwrite.disabled = isCrossMonth;
-    btnOverwrite.style.opacity = isCrossMonth ? '0.35' : '1';
-    btnOverwrite.title = isCrossMonth ? '跨月不可覆蓋' : '';
+    btnOverwrite.disabled = noOverwrite;
+    btnOverwrite.style.opacity = noOverwrite ? '0.35' : '1';
+    btnOverwrite.title = isOtherPerson ? '非同一申請人不可覆蓋' : isCrossMonth ? '跨月不可覆蓋' : '';
   }
 
   document.getElementById('dupRemaining').textContent =
@@ -3919,90 +3946,32 @@ function tableStatusRow(cols, msg, type='empty') {
 const loadingRow = (cols, msg='載入中...')           => tableStatusRow(cols, msg, 'loading');
 const emptyRow   = (cols, msg='尚無資料')             => tableStatusRow(cols, msg, 'empty');
 const errorRow   = (cols, msg='❌ 載入失敗，請重試') => tableStatusRow(cols, msg, 'error');
-// ════════════════════════════════════════════════════════════
-// DEBUG SNAPSHOT — 傳送前端狀態到 GAS DebugLog sheet
-// ════════════════════════════════════════════════════════════
-async function sendDebugSnapshot() {
-  const CHUNK = 1800; // 每片最大字數（GAS cell 上限 ~50000，保守切小讓 Sheet 易讀）
-  const statusEl = document.getElementById('debugSnapStatus');
-  if (statusEl) statusEl.textContent = '準備快照...';
-
-  // ── 完整快照（不壓縮，保留所有欄位方便 debug）──
-  const fuelSummary = (window._fuelProjList || []).map((fp, idx) => ({
-    idx,
-    uid:      fp.uid,
-    attrType: fp.attrType,
-    type:     fp.type,
-    projId:   fp.projId,
-    deptId:   fp.deptId,
-    fieldRows:(fp.fieldRows || []).map(fr => ({
-      date:    fr.date,
-      reason:  fr.reason,
-      end:     fr.end,
-      km:      fr.km,
-      isRound: fr.isRound,
-    })),
-  }));
-
-  const receiptSummary = S.receipts.map(r => ({
-    id:        r.id,
-    cat:       r.category,
-    vendor:    r.vendor,
-    amount:    r.amount,
-    date:      r.date,
-    invoiceNo: r.invoiceNo,
-    ocrKey:    r.ocrKey,
-    otherAttr: r.otherAttr || '',
-    projectId: r.projectId || '',
-    dept:      r.dept      || '',
-    supplement:r.supplement|| '',
-    _isNew:    r._isNew,
-    _isDup:    r._isDuplicate,
-  }));
-
-  const full = JSON.stringify({
-    ts:        new Date().toISOString(),
-    user:      S.user?.name || '?',
-    month:     document.getElementById('global-month')?.value || '?',
-    fuelProj:  fuelSummary,
-    receipts:  receiptSummary,
-  }, null, 0);  // 不縮排，節省字數
-
-  // ── 切片 ──
-  const chunks = [];
-  for (let i = 0; i < full.length; i += CHUNK) {
-    chunks.push(full.slice(i, i + CHUNK));
-  }
-
-  if (statusEl) statusEl.textContent = `傳送中（共 ${chunks.length} 片）...`;
-
-  try {
-    const res = await callGAS({ action: 'debugSnapshot', chunks });
-    if (res.success) {
-      if (statusEl) statusEl.textContent =
-        `✅ 已寫入 ${res.written} 列（共 ${full.length} 字）`;
-    } else {
-      if (statusEl) statusEl.textContent = '❌ ' + (res.error || '未知錯誤');
-    }
-    setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 6000);
-  } catch(e) {
-    if (statusEl) statusEl.textContent = '❌ ' + e.message;
-  }
-}
-
 // ── 辨識失敗卡片的操作函式 ──────────────────────────────────
 
 // 重新辨識：把失敗 receipt 對應的原始檔加回 ocrQueue
 function retryOCR(rcId) {
   const r = S.receipts.find(x => x.id === rcId);
   if (!r) return;
+
+  // 還原原始 Drive fileId（error receipt 的 id 格式為 ${fileId}_err）
+  const driveId = rcId.endsWith('_err') ? rcId.slice(0, -4) : '';
+
   // 只有仍在等待/處理中的同名項目才算「已在佇列」，已完成/失敗的不擋
   const active = S.ocrQueue.find(q => q.name === r.source &&
     (q.status === 'pending' || q.status === 'processing'));
   if (active) {
     active.status = 'pending';   // 重設為待辨識
+    if (driveId && !active.id) active.id = driveId;
   } else {
-    S.ocrQueue.push({ id: 'retry_' + Date.now(), name: r.source || rcId, status: 'pending', qAttribution: 'project' });
+    // 嘗試從已載入的 Drive 檔案清單找回正確的 mimeType
+    const driveFile = (S._driveFilesSorted || S.driveFiles || []).find(f => f.name === r.source);
+    S.ocrQueue.push({
+      id:       driveId || ('retry_' + Date.now()),
+      name:     r.source || rcId,
+      mimeType: driveFile?.mimeType || '',
+      status:   'pending',
+      qAttribution: 'project',
+    });
   }
   badge('nb-ocr', S.ocrQueue.length);
   renderQueue();
@@ -4019,7 +3988,18 @@ function editErrorReceipt(rcId) {
   if (el) el.style.display = el.style.display === 'none' ? 'flex' : 'none';
 }
 
-// 確認手動填寫：清除 error 狀態，設 category 為 other
+// 切換手動填寫卡片的費用類別 toggle（不重繪，保持編輯區展開）
+function setErrCat(rcId, cat) {
+  const r = S.receipts.find(x => x.id === rcId);
+  if (r) r.category = cat;
+  const tgl = document.getElementById('err-tgl-cat-' + rcId);
+  if (tgl) {
+    tgl.querySelectorAll('.tgl-btn').forEach((b, i) =>
+      b.classList.toggle('on', (cat === 'fuel') === (i === 0)));
+  }
+}
+
+// 確認手動填寫：清除 error 狀態
 function confirmEditError(rcId) {
   const r = S.receipts.find(x => x.id === rcId);
   if (!r) return;
@@ -4027,8 +4007,9 @@ function confirmEditError(rcId) {
   r.vendor   = document.getElementById('err-vendor-' + rcId)?.value || r.vendor;
   r.amount   = +(document.getElementById('err-amt-'    + rcId)?.value || 0);
   r.date     = document.getElementById('err-date-'   + rcId)?.value || '';
+  r.invoiceNo = document.getElementById('err-invoiceno-' + rcId)?.value || '';
   r.supplement = document.getElementById('err-notes-' + rcId)?.value || '';
-  r.category = 'other';
+  r.category = r.category === 'fuel' ? 'fuel' : 'other';
   r._checked = true;
   stashSingle(rcId);
   renderOCRResults();
