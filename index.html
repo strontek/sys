@@ -1576,6 +1576,9 @@ let _otherSelectedItem = null;
 function renderOtherTab(otherReceipts) {
   // 一律預設不勾選，由使用者主動勾選要匯出的項目
   const rows = otherReceipts.map(r => {
+    // 辨識失敗的佔位卡片：交給 rcHTML 渲染專用的錯誤卡片（含🔄重新辨識）
+    if (r.status === 'error') return rcHTML(r);
+
     if (r._checked === undefined) r._checked = false;
     const defChk  = r._checked;
     const isNew   = r._isNew;
@@ -3042,7 +3045,7 @@ function updateStats() {
   const fuelAmt     = calcFuelApplyTotal();
 
   // 其他（含原停車費）：全部顯示
-  const otherAll = all.filter(r => r.category !== 'fuel');
+  const otherAll = all.filter(r => r.category !== 'fuel' && r.status !== 'error');
   const otherCnt = otherAll.length;
   const otherAmt = otherAll.reduce((s, r) => s + r.amount, 0);
 
