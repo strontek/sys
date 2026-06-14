@@ -1309,10 +1309,6 @@ function addQueue(file) {
   badge('nb-ocr', S.ocrQueue.length);
 }
 
-function setQueueAttribution(i, val) {
-  if (S.ocrQueue[i]) S.ocrQueue[i].qAttribution = val;
-}
-
 function renderQueue() {
   document.getElementById('queueCnt').textContent = S.ocrQueue.length + ' 個';
   const c = document.getElementById('queueList');
@@ -1393,9 +1389,9 @@ async function runOCR() {
         if (!S.receipts.find(r => r.id===id)) {
           const rec = mkReceipt(id, qf, item, idx, true);
           // 套用佇列指定的歸屬
-          rec.attribution = attribution;
-          if (attribution === 'project') rec.projectId = attributionTarget;
-          else if (attribution === 'dept') rec.dept = attributionTarget;
+          if (attribution === 'project')   rec.projectId  = attributionTarget;
+          else if (attribution === 'dept') rec.dept       = attributionTarget;
+          else if (attribution === 'other') rec.otherAttr = attributionTarget;
           // 記錄重複發票資訊
           if (item.isDuplicate) {
             rec._isDuplicate    = true;
@@ -1410,9 +1406,7 @@ async function runOCR() {
         S.receipts.push({
           id: qf.id+'_err', source: qf.name, status:'error',
           error: res.error || '辨識失敗', category:'other',
-          attribution, projectId: attribution==='project'?attributionTarget:'',
-          dept: attribution==='dept'?attributionTarget:(S.user?.dept||''),
-          vendor:'辨識失敗', amount:0, date:'', invoiceNo:'', notes:'', editData:{}
+          vendor:'辨識失敗', amount:0, date:'', invoiceNo:'', notes:''
         });
       }
     } catch(e) {
@@ -1420,8 +1414,7 @@ async function runOCR() {
       S.receipts.push({
         id: qf.id+'_err', source: qf.name, status:'error',
         error: e.message, category:'other',
-        attribution:'project', projectId:'', dept: S.user?.dept||'',
-        vendor:'辨識失敗', amount:0, date:'', invoiceNo:'', notes:'', editData:{}
+        vendor:'辨識失敗', amount:0, date:'', invoiceNo:'', notes:''
       });
     }
 
@@ -2074,21 +2067,6 @@ function fuelFRRowHTML(idx, fi, fr) {
   </div>`;
 }
 
-// ── 新增里程實報項目 ─────────────────────────────────────────
-function addFuelMile() {
-  const uid = 'fp_' + Date.now();
-  window._fuelProjList.push({ uid, projId: '', deptId: '', attrType: '', type: 'mile', fieldRows: [] });
-  const idx = window._fuelProjList.length - 1;
-  const list = document.getElementById('fuel-mile-list');
-  if (list) {
-    const div = document.createElement('div');
-    div.innerHTML = fuelMileRowHTML(window._fuelProjList[idx], idx);
-    list.appendChild(div.firstElementChild);
-    setTimeout(() => initFuelMileDropdownAt(idx), 0);
-  }
-  updateFuelDiff();
-}
-
 function removeFuelProj(idx) {
   window._fuelProjList.splice(idx, 1);
   renderOCRResults();
@@ -2386,25 +2364,29 @@ function rcHTML(r) {
   if (r.status === 'error') {
     return `
     <div id="rc-${r.id}" style="border:2px solid var(--red,#e53935);border-radius:12px;margin-bottom:12px;background:#fff8f8;overflow:hidden">
-      <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:#ffebee">
-        <span style="font-size:22px">❌</span>
-        <div style="flex:1;min-width:0">
-          <div style="font-weight:700;color:#c62828;font-size:14px">辨識失敗 — 請重新辨識或手動填寫</div>
-          <div style="font-size:12px;color:#888;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.source||''}">${r.source||'未知檔案'}</div>
-          ${r.error ? `<div style="font-size:11px;color:#b71c1c;margin-top:3px">錯誤：${r.error}</div>` : ''}
+      <div style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px 10px;padding:12px 14px;background:#ffebee">
+        <div style="display:flex;align-items:flex-start;gap:8px;flex:1;min-width:200px">
+          <span style="font-size:20px;flex-shrink:0;line-height:1.4">❌</span>
+          <div style="min-width:0">
+            <div style="font-weight:700;color:#c62828;font-size:13px;line-height:1.5">辨識失敗，請重新辨識或手動填寫</div>
+            <div style="font-size:12px;color:#888;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.source||''}">${r.source||'未知檔案'}</div>
+            ${r.error ? `<div style="font-size:11px;color:#b71c1c;margin-top:3px">錯誤：${r.error}</div>` : ''}
+          </div>
         </div>
-        <button onclick="retryOCR('${r.id}')"
-          style="flex-shrink:0;padding:7px 14px;border-radius:8px;border:none;background:#1565c0;color:#fff;font-size:13px;font-weight:600;cursor:pointer">
-          🔄 重新辨識
-        </button>
-        <button onclick="editErrorReceipt('${r.id}')"
-          style="flex-shrink:0;padding:7px 14px;border-radius:8px;border:none;background:#f5f5f5;color:#333;font-size:13px;font-weight:600;cursor:pointer;border:1px solid #ddd">
-          ✏️ 手動填寫
-        </button>
-        <button onclick="removeErrorReceipt('${r.id}')"
-          style="flex-shrink:0;padding:7px 10px;border-radius:8px;border:none;background:transparent;color:#b71c1c;font-size:16px;cursor:pointer" title="移除">
-          🗑
-        </button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;width:100%">
+          <button onclick="retryOCR('${r.id}')"
+            style="padding:7px 14px;border-radius:8px;border:none;background:#1565c0;color:#fff;font-size:13px;font-weight:600;cursor:pointer">
+            🔄 重新辨識
+          </button>
+          <button onclick="editErrorReceipt('${r.id}')"
+            style="padding:7px 14px;border-radius:8px;border:1px solid #ddd;background:#f5f5f5;color:#333;font-size:13px;font-weight:600;cursor:pointer">
+            ✏️ 手動填寫
+          </button>
+          <button onclick="removeErrorReceipt('${r.id}')"
+            style="padding:7px 10px;border-radius:8px;border:none;background:transparent;color:#b71c1c;font-size:16px;cursor:pointer;margin-left:auto" title="移除">
+            🗑
+          </button>
+        </div>
       </div>
       <div id="rc-edit-${r.id}" style="display:none;padding:14px;border-top:1px solid #ffcdd2;flex-direction:column;gap:10px">
         <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -2759,7 +2741,7 @@ async function stashSingle(id) {
   // attribution：其他費用統一用 'other'，GAS exportAll 從 otherAttr 取真正歸屬
   // 油資歸屬只存 FuelProjects sheet → 傳空字串
   const attribution = r.category === 'fuel' ? '' : 'other';
-  const attributionTarget = r.category === 'fuel' ? '' : (r.otherAttr || r.parkAttr || r.dept || '');
+  const attributionTarget = r.category === 'fuel' ? '' : (r.otherAttr || '');
   // 補充欄：油資存外勤JSON，停車/其他存文字補充
   const fieldRows  = r.category === 'fuel'
     ? (fuelFp?.fieldRows?.length ? JSON.stringify(fuelFp.fieldRows)
@@ -3307,7 +3289,7 @@ async function _doExport(skipStash = false) {
     .map(r => ({
       ...r,
       supplement:   r.supplement || r.notes || '',
-      otherAttr:    r.otherAttr  || r.parkAttr || '其他',  // 未設定歸屬自動補「其他」
+      otherAttr:    r.otherAttr  || '其他',  // 未設定歸屬自動補「其他」
     }));
 
   const hasAnything = fuelProjData.length || otherReceipts.length;
@@ -3677,40 +3659,6 @@ function setStep(n) {
 }
 
 // ════════════════════════════════════════════════════════════
-// GOOGLE MAPS — 查詢最短距離 + 靜態地圖截圖
-// GAS 回傳：{ km, distText, duration }
-// ════════════════════════════════════════════════════════════
-async function queryMaps(pid, i) {
-  const origin = document.getElementById(`a2s-${pid}-${i}`)?.value?.trim();
-  const dest   = document.getElementById(`a2e-${pid}-${i}`)?.value?.trim();
-  if (!origin || !dest) { toast('⚠️ 請填入起點和終點'); return; }
-
-  const resEl = document.getElementById(`a2km-result-${pid}-${i}`);
-  const kmEl  = document.getElementById(`a2km-${pid}-${i}`);
-  if (resEl) resEl.textContent = '查詢中...';
-
-  try {
-    const res = await callGAS({ action: 'getDistance', origin, dest });
-    if (!res.success) throw new Error(res.error || 'GAS 查詢失敗');
-
-    const { km, distText, duration } = res;
-    if (kmEl) kmEl.value = km;
-
-    const mapsLink = `https://www.google.com/maps/dir/${encodeURIComponent(origin)}/${encodeURIComponent(dest)}`;
-    if (resEl) {
-      resEl.innerHTML =
-        `<span style="font-size:13px;font-weight:700">📍 ${distText}（${km} km）· ⏱ ${duration}</span>` +
-        `&nbsp;<a href="${mapsLink}" target="_blank" style="color:var(--accent);font-size:13px">↗ Maps</a>`;
-    }
-    toast(`✅ 最短距離：${distText}（${km} km）`);
-  } catch(e) {
-    if (resEl) resEl.textContent = '查詢失敗';
-    toast('❌ Maps 查詢失敗：' + e.message);
-  }
-}
-
-
-// ════════════════════════════════════════════════════════════
 // STASH
 // ════════════════════════════════════════════════════════════
 async function stashThenExport() {
@@ -3741,7 +3689,7 @@ async function doStashAll(silent = false) {
     const attribution = r.category === 'fuel' ? 'project' : 'other';
     const attributionTarget = r.category === 'fuel'
       ? (fuelFp?.projId || r.projectId || '')
-      : (r.otherAttr || r.parkAttr || r.dept || '');
+      : (r.otherAttr || '');
     const fieldRows  = r.category === 'fuel'
       ? (fuelFp?.fieldRows?.length ? JSON.stringify(fuelFp.fieldRows) : '')
       : undefined;
@@ -3770,13 +3718,6 @@ async function doStashAll(silent = false) {
     if (res.success) toast(`✅ 已暫存 ${res.updated} 筆至 OcrResults`);
     else toast('❌ 暫存失敗：' + (res.error || '未知'));
   }
-}
-
-function syncOcrMonth(val) {
-  const el = document.getElementById('global-month');
-  if (el && val) el.value = val;
-  loadDriveFiles();
-  loadExportHistory(false);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -4011,7 +3952,7 @@ async function sendDebugSnapshot() {
     date:      r.date,
     invoiceNo: r.invoiceNo,
     ocrKey:    r.ocrKey,
-    parkAttr:  r.otherAttr || r.parkAttr || '',
+    otherAttr: r.otherAttr || '',
     projectId: r.projectId || '',
     dept:      r.dept      || '',
     supplement:r.supplement|| '',
