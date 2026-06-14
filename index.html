@@ -1319,6 +1319,9 @@ function renderQueue() {
              style="width:44px;height:44px;object-fit:cover;border-radius:6px"
              onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'🖼️',style:'font-size:22px'}))">`
       : `<span style="font-size:22px">${isPdf ? '📄' : '🖼️'}</span>`;
+    // Drive 連結：優先用 driveUrl，否則用 id 組連結
+    const driveHref = f.driveUrl || (f.id && !f.id.startsWith('retry_')
+      ? `https://drive.google.com/file/d/${f.id}/view` : '');
     return `
     <div class="file-item" style="gap:10px">
       <div class="file-thumb">${thumbHtml}</div>
@@ -1327,6 +1330,11 @@ function renderQueue() {
         <span class="badge ${f.status==='done'?'bd-green':f.status==='error'?'bd-red':'bd-muted'}">${
           f.status==='done' ? '✅ 完成' : f.status==='error' ? '❌ 失敗' : '⏳ 待辨識'}</span>
       </div>
+      ${driveHref
+        ? `<a href="${driveHref}" target="_blank"
+             style="font-size:18px;color:var(--accent);text-decoration:none;flex-shrink:0"
+             title="在 Google Drive 開啟">↗</a>`
+        : `<span style="font-size:18px;color:var(--border2);flex-shrink:0">—</span>`}
       <button class="btn btn-danger btn-sm" onclick="removeQueue(${i})">✕</button>
     </div>`;
   }).join('');
@@ -2424,7 +2432,7 @@ function rcHTML(r) {
           </div>
         </div>
         <div>
-          <label class="lbl">申請說明</label>
+          <label class="lbl">申請事由</label>
           <input class="inp" id="err-notes-${r.id}" value="${r.supplement||''}" placeholder="說明費用與公務的關聯"
             onchange="upR('${r.id}','supplement',this.value);stashSingle('${r.id}')">
         </div>
