@@ -817,6 +817,14 @@ function populateSelects() {
   }
 }
 
+// 取得使用者可見的專案（全域專案 + 自身部門 + 可顯示部門）
+function getVisibleProjects() {
+  const visibleDeptCodes = (S.config.departments || []).map(d => d.code);
+  return (S.config.projects || []).filter(p =>
+    !p.deptCode || visibleDeptCodes.indexOf(p.deptCode) !== -1
+  );
+}
+
 // 全域月份變更：同步到各頁
 function onGlobalMonthChange(val) {
   loadDriveFiles();
@@ -1566,10 +1574,9 @@ if (!window._fuelProjList) window._fuelProjList = [];
 let _otherSelectedItem = null;
 
 function renderOtherTab(otherReceipts) {
-  // 預設：未設定歸屬的不勾選；已設定歸屬的勾選
+  // 一律預設不勾選，由使用者主動勾選要匯出的項目
   const rows = otherReceipts.map(r => {
-    // 若尚未有 _checked 狀態，依是否設定歸屬決定
-    if (r._checked === undefined) r._checked = !!r.otherAttr;
+    if (r._checked === undefined) r._checked = false;
     const defChk  = r._checked;
     const isNew   = r._isNew;
     const newTag  = isNew ? `<span style="font-size:11px;background:var(--green);color:#fff;border-radius:3px;padding:1px 5px;margin-left:4px">新產生</span>` : '';
@@ -1665,8 +1672,7 @@ function toggleOtherRow(id) {
 
 function initOtherAttrDropdown() {
   _otherSelectedItem = null;
-  const items = (S.config.projects||[])
-    .filter(p => !p.deptCode || p.deptCode === (S.config.userDeptCode||''))
+  const items = getVisibleProjects()
     .map(p => ({ id: p.id, name: p.name, quota: p.quota }))
     .concat((S.config.departments||[]).map(d => ({ id: d.code, name: d.name })))
     .concat([{ id: '其他', name: '其他' }]);
@@ -1687,12 +1693,11 @@ function updateOtherApplyBtn() {
 function applyOtherAttr() {
   if (!_otherSelectedItem) return;
   const item = _otherSelectedItem;
-  // 套用歸屬到所有已勾選的其他費用
+  // 套用歸屬到所有已勾選的其他費用（不自動勾選/取消勾選任何項目）
   S.receipts
     .filter(r => r.category !== 'fuel' && document.getElementById('rck-'+r.id)?.classList.contains('on'))
     .forEach(r => {
       upR(r.id, 'otherAttr', item.id);
-      upR(r.id, '_checked', true);
       stashSingle(r.id);
     });
   const inp = document.querySelector('#fd-other-attr .fd-input');
@@ -1909,14 +1914,12 @@ function updateFuelDiff() {
 
 // ── 月定額：初始化輸入框 ─────────────────────────────────────
 function initFuelProjDropdowns() {
-  const myDeptCode  = S.config.userDeptCode || S.config.userDept || '';
   const selectedIds = window._fuelProjList
     .map(fp => fp.projId || fp.deptId || (fp.attrType === 'other' ? '其他' : ''))
     .filter(Boolean);
 
-  // 所有生效中專案 + 部門 + 其他（排除已選）
-  const projItems = (S.config.projects || [])
-    .filter(p => !p.deptCode || p.deptCode === myDeptCode)
+  // 所有生效中專案（含可顯示部門） + 部門 + 其他（排除已選）
+  const projItems = getVisibleProjects()
     .filter(p => !selectedIds.includes(p.id))
     .map(p => ({ id: p.id, name: p.name, quota: p.quota, type: p.quota ? 'quota' : 'mile' }));
   const deptItems = (S.config.departments || [])
@@ -2094,9 +2097,8 @@ function initFuelMileDropdownAt(idx) {
   const el = document.getElementById(wrapperId);
   if (!el) return;
 
-  const myDeptCode = S.config.userDeptCode || S.config.userDept || '';
   // 所有生效中專案（含月定額和里程實報）+ 部門 + 其他
-  const projItems = S.config.projects.filter(p => !p.deptCode || p.deptCode === myDeptCode)
+  const projItems = getVisibleProjects()
     .map(p => ({ id: p.id, name: p.name, badge: p.quota ? '月定額' : '里程' }));
   const deptItems = (S.config.departments || []).map(d => ({ id: d.code, name: d.name, badge: '部門' }));
   const otherItem = [{ id: '其他', name: '其他費用', badge: '其他' }];
@@ -2444,8 +2446,7 @@ function rcHTML(r) {
   const dupBadge = r._isDuplicate
     ? `<span class="badge bd-red" title="發票號碼重複">⚠️ 重複</span>` : '';
 
-  const myDeptCode = S.config.userDeptCode || S.config.userDept || '';
-  const sameDeptProjects = S.config.projects.filter(p => !p.deptCode || p.deptCode === myDeptCode);
+  const sameDeptProjects = getVisibleProjects();
   const recentIds = (S._recentProjIds || []).slice(0, 3);
 
   const isFuel  = r.category === 'fuel';
@@ -2575,12 +2576,16 @@ function rcHTML(r) {
       ];
       fdInit(`fd-otattr-${rid}`, otItems, item => {
         upR(rid, 'otherAttr', item.id);
-        // 設定歸屬後自動勾選此筆
-        const chk = document.getElementById('rck-' + rid);
-        if (chk && !chk.classList.contains('on')) chk.classList.add('on');
-        upR(rid, '_checked', true);
-        syncAllOcrChk();
-        updateStats();
+        // 設定歸屬不自動勾選；輕量更新對應 badge（避免整頁重渲染遺失焦點）
+        const allBadges = document.querySelectorAll(`#other-row-${rid} .badge`);
+        const badgeEl = allBadges[allBadges.length - 1];
+        if (badgeEl) {
+          const proj = (S.config.projects||[]).find(p => p.id === item.id);
+          const dept = (S.config.departments||[]).find(d => d.code === item.id);
+          const name = proj ? `${proj.id} ${proj.name}` : dept ? `${dept.code} ${dept.name}` : item.id;
+          badgeEl.textContent = name;
+          badgeEl.className = 'badge bd-blue';
+        }
         stashSingle(rid);
       }, _recentIds);
       if (r.otherAttr) {
@@ -3381,11 +3386,17 @@ function nav(name) {
 // D. 新增專案頁
 // ════════════════════════════════════════════════════════════
 
-// 填充部門下拉（從 S.config.departments）
+// 填充部門下拉（從 S.config.departments，並聯集員工自身部門）
 function populateNpDept() {
   const sel = document.getElementById('np-dept');
   if (!sel) return;
-  const depts = S.config.departments || [];
+  const depts = (S.config.departments || []).slice();
+  // 補上員工自身部門（若不在可顯示部門列表中）
+  const myCode = S.config.userDeptCode || '';
+  const myName = S.config.userDept     || '';
+  if (myCode && !depts.some(d => d.code === myCode)) {
+    depts.unshift({ code: myCode, name: myName || myCode });
+  }
   sel.innerHTML = '<option value="">— 選擇部門 —</option>' +
     depts.map(d => `<option value="${d.code}">${d.name}</option>`).join('');
 }
@@ -3485,9 +3496,9 @@ function renderProjectList(rows) {
   const tbody = document.getElementById('projListTbl');
   if (!tbody) return;
 
-  // 僅顯示使用者有權限的部門（userDeptCode 或 deptCode 為空的全域專案）
-  const myDeptCode = S.config.userDeptCode || '';
-  const filtered = rows.filter(p => !p.deptCode || p.deptCode === myDeptCode);
+  // 僅顯示使用者有權限的部門（自身部門 + 可顯示部門，或 deptCode 為空的全域專案）
+  const visibleDeptCodes = (S.config.departments || []).map(d => d.code);
+  const filtered = rows.filter(p => !p.deptCode || visibleDeptCodes.indexOf(p.deptCode) !== -1);
 
   if (!filtered.length) {
     tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px">尚無可用專案</td></tr>';
