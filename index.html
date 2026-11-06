@@ -992,7 +992,8 @@ input[type="time"].inp{min-width:0}
       </div>
       <div>
         <label class="lbl">隸屬部門 <span style="color:var(--danger)">*</span></label>
-        <select class="inp" id="npd-dept"><option value="">— 選擇部門 —</option></select>
+        <select class="inp" id="npd-dept" onchange="npdDeptHintClear()"><option value="">— 選擇部門 —</option></select>
+        <div id="npd-dept-hint" style="font-size:12px;margin-top:4px;color:var(--muted)"></div>
       </div>
     </div>
 
@@ -1540,7 +1541,7 @@ input[type="time"].inp{min-width:0}
 // CONFIG
 // ════════════════════════════════════════════════════════════
 const CFG = {
-  GAS_URL: 'https://script.google.com/macros/s/AKfycbx3cQMDpX8k_RyAdEd2X3Ro6juWzIKe-2g1XYAp-zEO9p6im-30FmpV0qpeaJHtAMJO/exec',
+  GAS_URL: 'https://script.google.com/macros/s/AKfycbxXR39PY2JplA6h5CdVDxfA9RCvk3zjQnVwijVL2w44ZQ7ZklSErjvurnUX5vs6_waZhw/exec',
 };
 
 // ════════════════════════════════════════════════════════════
@@ -6677,10 +6678,27 @@ function npdOpenReview(parsed) {
   const depts = S.config.departments || [];
   deptSel.innerHTML = '<option value="">— 選擇部門 —</option>' +
     depts.map(d => `<option value="${d.code}">${d.name}</option>`).join('');
+  // 歸屬部門：後端依「業務代表 → 上傳者部門」建議；判斷不出來（例如上傳者是財務/管理部、業務代表也沒填）就留空要求手動選
+  const hint = $('npd-dept-hint');
+  if (parsed.suggestedDeptCode && depts.some(d => d.code === parsed.suggestedDeptCode)) {
+    deptSel.value = parsed.suggestedDeptCode;
+    hint.style.color = 'var(--muted)';
+    hint.textContent = `已依${parsed.suggestedDeptSource || '系統判斷'}自動帶入` +
+      (parsed.suggestedDeptSource === '業務代表' && parsed.salesRep ? `（${parsed.salesRep}）` : '') + '，可自行修改';
+  } else {
+    hint.style.color = 'var(--red)';
+    hint.textContent = '無法從業務代表或上傳者部門判斷，請手動選擇歸屬部門' +
+      (parsed.salesRep ? `（業務代表：${parsed.salesRep}）` : '');
+  }
   $('npd-sign-warning').style.display = parsed.ownerSigned === false ? '' : 'none';
   $('npdMsg').textContent = '';
   npdRenderRows();
   openModal('newProjDocModal');
+}
+
+function npdDeptHintClear() {
+  const hint = $('npd-dept-hint');
+  if (hint) hint.textContent = '';
 }
 
 // 重新分配訂金扣抵：從最後一期往前扣，每期最多扣到該期金額歸零（收款金額最小是0），
@@ -6850,9 +6868,10 @@ async function poOpenModal(prefill) {
 
 // 從「本期銷貨」勾選的設備/工程品項轉成採購單草稿——品名/數量/金額原樣帶入，
 // 單價/規格/單位設備品項有就帶、工程期別沒有單價概念所以整筆當一項、單價=金額。
-function poOpenFromSalesSelection() {
-  const { equipmentIds, projectStageIds } = spCollectCheckedSalesIds();
-  if (!equipmentIds.length && !projectStageIds.length) { toast('⚠️ 請先勾選至少一筆設備或工程品項'); return; }
+async function poOpenFromSalesSelection() {
+  const picked = await spResolveSalesSelection('轉採購單');
+  if (!picked) return;
+  const { equipmentIds, projectStageIds } = picked;
   const eqItems = (S._spEquipment || []).filter(r => equipmentIds.includes(r.id)).map(r => ({
     itemName: r.item, spec: r.spec || '', qty: Number(r.qty) || 1, unit: r.unit || '',
     unitPrice: Number(r.unitPrice) || Number(r.amount) || 0, amount: Number(r.amount) || 0,
@@ -8946,6 +8965,36 @@ function spCollectCheckedSalesIds() {
   return { equipmentIds, projectStageIds };
 }
 
+// 匯出銷貨單／開立發票申請單／轉採購單共用的「取得要處理的品項」：
+//  ① 有勾選 → 用勾選的；
+//  ② 沒勾選，且設備或施工其中一類本來就沒有品項 → 跳確認，確認後自動帶入另一類目前畫面上的全部品項
+//     （畫面上有勾「隱藏已匯出銷貨單的品項」時，已隱藏的不會被帶入）；
+//  ③ 沒勾選，但兩類都有品項 → 維持「請至少勾選」，避免漏勾；
+//  ④ 兩類都沒有品項 → 「尚無可匯出品項」。
+// actionLabel 用在確認文字，例如「匯出」「開立發票申請單」「轉採購單」。回傳 { equipmentIds, projectStageIds } 或 null（已提示／使用者取消）。
+async function spResolveSalesSelection(actionLabel) {
+  const sel = spCollectCheckedSalesIds();
+  if (sel.equipmentIds.length || sel.projectStageIds.length) return sel;
+
+  const periodIndex = S._spCtx?.periodIndex;
+  const hasEq = (S._spEquipment || []).length > 0;
+  const hasSt = (S._spStages || []).some(s => String(s.clientPeriodIdx) === String(periodIndex));
+  if (!hasEq && !hasSt) { toast('⚠️ 尚無可匯出品項'); return null; }
+  if (hasEq && hasSt)   { toast('⚠️ 請先勾選至少一筆設備或工程品項'); return null; }
+
+  // 只有一類有品項：帶入該類畫面上的全部品項（DOM 上的勾選框＝已套用「隱藏已匯出」與目前收款期別）
+  const allEq = [...document.querySelectorAll('.sp-eq-chk')].map(el => el.value);
+  const allSt = [...document.querySelectorAll('.sp-st-chk')].map(el => el.value);
+  if (!allEq.length && !allSt.length) { toast('⚠️ 尚無可匯出品項（品項可能已被「隱藏已匯出銷貨單的品項」藏起來）'); return null; }
+  const missing = hasEq ? '施工' : '設備';
+  const present = hasEq ? '設備' : '施工';
+  const n = hasEq ? allEq.length : allSt.length;
+  const ok = await showConfirm(`此案尚無${missing}品項，確認僅${actionLabel}${present}品項（共 ${n} 項）？`,
+    { title: `確認${actionLabel}`, okLabel: '確認', okClass: 'btn-primary' });
+  if (!ok) return null;
+  return { equipmentIds: hasEq ? allEq : [], projectStageIds: hasSt ? allSt : [] };
+}
+
 // docType: 'salesOrder' | 'invoiceRequest'（兩者共用同一個「勾選品項＋一次性表頭欄位」流程，
 // 因為系統本身不儲存業主公司抬頭/統編/交易條件這些一次性資訊，只能匯出當下手動填）
 const _EXPORT_EXTRA_FIELDS = {
@@ -8969,8 +9018,9 @@ const _EXPORT_EXTRA_FIELDS = {
 };
 
 async function spOpenExportModal(docType) {
-  const { equipmentIds, projectStageIds } = spCollectCheckedSalesIds();
-  if (!equipmentIds.length && !projectStageIds.length) { toast('⚠️ 請先勾選至少一筆設備或工程品項'); return; }
+  const picked = await spResolveSalesSelection(docType === 'salesOrder' ? '匯出' : '開立發票申請單');
+  if (!picked) return;
+  const { equipmentIds, projectStageIds } = picked;
   if (docType === 'salesOrder') {
     const done = [...(S._spEquipment || []).filter(r => equipmentIds.includes(r.id)), ...(S._spStages || []).filter(r => projectStageIds.includes(r.id))].filter(spIsOrdered);
     if (done.length && !(await showConfirm(`勾選的品項中有 ${done.length} 筆已經匯出過銷貨單，確定要再匯出一次嗎？`, { title: '⚠️ 重複匯出', okLabel: '再匯出一次', okClass: 'btn-primary' }))) return;
