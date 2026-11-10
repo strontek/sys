@@ -6631,13 +6631,21 @@ function nav(name) {
 // D. 新增專案頁
 // ════════════════════════════════════════════════════════════
 
-// 填充部門下拉（從 S.config.departments）
-function populateNpDept() {
+// 填充部門下拉：只列「這位登入者可新增專案的部門」（S.config.projectDepartments，見後端 _projectDeptsFor）。
+// keepCode：編輯既有專案時，該專案目前的部門就算不在可選清單內（歷史資料）也要保留在下拉裡，避免被清成空白。
+// 沒傳 keepCode 時保留目前已選的值（切換頁面／重新同步設定時不會把使用者選好的部門洗掉）。
+function populateNpDept(keepCode) {
   const sel = $('np-dept');
   if (!sel) return;
-  const depts = S.config.departments || [];
+  const keep = keepCode !== undefined ? keepCode : sel.value;
+  const depts = (S.config.projectDepartments || S.config.departments || []).slice();
+  if (keep && !depts.some(d => d.code === keep)) {
+    const d = (S.config.allDepartments || []).find(x => x.code === keep);
+    depts.push({ code: keep, name: d?.name || keep });
+  }
   sel.innerHTML = '<option value="">— 選擇部門 —</option>' +
     depts.map(d => `<option value="${d.code}">${d.name}</option>`).join('');
+  if (keep) sel.value = keep;
 }
 
 // ════════════════════════════════════════════════════════════
@@ -6675,7 +6683,8 @@ function npdOpenReview(parsed) {
   $('npd-name').value = parsed.projectName || '';
   $('npd-note').value = parsed.note || '';
   const deptSel = $('npd-dept');
-  const depts = S.config.departments || [];
+  // 可選部門以後端這次回傳的為準（SystemSettings 專案部門 ∩ 登入者可用部門）
+  const depts = parsed.allowedDepts || S.config.projectDepartments || S.config.departments || [];
   deptSel.innerHTML = '<option value="">— 選擇部門 —</option>' +
     depts.map(d => `<option value="${d.code}">${d.name}</option>`).join('');
   // 歸屬部門：後端依「業務代表 → 上傳者部門」建議；判斷不出來（例如上傳者是財務/管理部、業務代表也沒填）就留空要求手動選
@@ -6687,8 +6696,15 @@ function npdOpenReview(parsed) {
       (parsed.suggestedDeptSource === '業務代表' && parsed.salesRep ? `（${parsed.salesRep}）` : '') + '，可自行修改';
   } else {
     hint.style.color = 'var(--red)';
-    hint.textContent = '無法從業務代表或上傳者部門判斷，請手動選擇歸屬部門' +
-      (parsed.salesRep ? `（業務代表：${parsed.salesRep}）` : '');
+    if (!depts.length) {
+      hint.textContent = '您目前沒有可新增專案的部門，請洽管理員確認員工表「可顯示部門」';
+    } else if (parsed.suggestedDeptConflict) {
+      hint.textContent = `報價單業務代表的部門（${parsed.suggestedDeptConflict}）不在您可新增專案的部門內，請手動選擇歸屬部門` +
+        (parsed.salesRep ? `（業務代表：${parsed.salesRep}）` : '');
+    } else {
+      hint.textContent = '無法從業務代表或上傳者部門判斷，請手動選擇歸屬部門' +
+        (parsed.salesRep ? `（業務代表：${parsed.salesRep}）` : '');
+    }
   }
   $('npd-sign-warning').style.display = parsed.ownerSigned === false ? '' : 'none';
   $('npdMsg').textContent = '';
@@ -7094,10 +7110,10 @@ function collectNpSubsidyMap() {
 // 預收款 toggle
 // 開啟新增/編輯專案 Modal；i 為 null 表示新增，否則依 S._projList[i] 填值編輯
 function openProjectModal(i, opts) {
-  populateNpDept();
   const isNew = (i === null || i === undefined);
   const p = isNew ? null : (S._projList || [])[i];
   if (!isNew && !p) return;
+  populateNpDept(isNew ? '' : (p.deptCode || ''));
 
   $('projectModal-title').textContent = isNew ? '➕ 新增專案' : '✏️ 編輯專案';
   $('np-rowIndex').value = isNew ? '' : i;
